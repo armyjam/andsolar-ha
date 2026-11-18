@@ -1,0 +1,44 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to AndSolar",
+        "description": "Enter the OpenAPI account you received from AndSolar.",
+        "data": {
+          "username": "Username",
+          "password": "Password",
+          "base_url": "Server URL"
+        },
+        "data_description": {
+          "base_url": "Production is https://ap.andsolartech.com. The test server is https://monitor.andsolartech.com."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate AndSolar",
+        "description": "The login for {username} no longer works. Enter the current password.",
+        "data": {
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid username or password.",
+      "cannot_connect": "Cannot reach the AndSolar server.",
+      "unknown": "Unexpected error. Check the Home Assistant log."
+    },
+    "abort": {
+      "already_configured": "This account is already configured.",
+      "reauth_successful": "Re-authentication was successful."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "AndSolar options",
+        "data": {
+          "scan_interval": "Update interval (minutes)"
+        }
+      }
+    }
+  }
+}
