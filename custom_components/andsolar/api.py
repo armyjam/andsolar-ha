@@ -123,10 +123,12 @@ class AndSolarClient:
         if isinstance(payload, dict) and payload.get("code") not in (None, 200):
             raise AuthError(f"login failed: {payload.get('msg')!r} (code {payload.get('code')})")
         token = None
-        if isinstance(payload, dict) and isinstance(payload.get("data"), dict):
-            token = payload["data"].get("token")
+        if isinstance(payload, dict):
+            token = payload.get("token")
+            if not token and isinstance(payload.get("data"), dict):
+                token = payload["data"].get("token")
         if not token:
-            raise AuthError("login response did not contain data.token")
+            raise AuthError("login response did not contain a token")
         with self._lock:
             self._token = token
             self._token_expires_at = time.time() + _TOKEN_LIFETIME - _TOKEN_REFRESH_MARGIN
