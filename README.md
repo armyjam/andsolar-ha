@@ -6,6 +6,11 @@ in Home Assistant, and lets you switch them on and off. It talks to the AndSolar
 
 [![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=armyjam&repository=andsolar-ha&category=integration)
 
+> **Unofficial project.** This integration is an independent, community-made project. It is
+> **not affiliated with, endorsed by, or supported by AndSolar** or Home Assistant. "AndSolar" and
+> any related names or logos are trademarks of their respective owners and are used here only to
+> identify the product this integration works with. See [Disclaimer](#disclaimer).
+
 ## Requirements
 
 - Home Assistant 2025.2 or newer
@@ -69,6 +74,10 @@ The switches control real power equipment. Turning a rapid shutdown output off s
 string's output. The plant-wide switch is disabled by default; enable it in the entity settings
 only if you want it. Do not wire these switches to automations you have not tested.
 
+Do not rely on this integration for anything safety-critical. Rapid shutdown and optimizer
+functions exist to protect people and equipment: confirm their behavior on the device or in the
+official AndSolar tools, not only in Home Assistant.
+
 ## Troubleshooting
 
 **"Invalid username or password" when adding the integration.** The message is shown for any
@@ -88,10 +97,6 @@ logger:
 
 Do not post logs publicly without checking them first.
 
-**The icon does not show in the HACS store list.** Home Assistant itself uses the icon shipped
-in the integration's `brand/` folder (Add integration dialog, Devices & services, device page).
-Some HACS versions still show a placeholder in their own store view; this does not affect the
-integration.
 
 **Switches take a while to react.** Commands go through the AndSolar cloud. The server may
 execute a command before its response reaches Home Assistant, so a switch can briefly show the
@@ -104,6 +109,32 @@ old state; it settles on the next update.
 - Optimizer and plant-wide switch states are assumed from the last command, not read back from
   the device.
 - Entity names are English only.
+
+## Disclaimer
+
+- **Use at your own risk.** The software is provided "as is", without warranty of any kind. The
+  author is not liable for any damage, data loss, loss of generation, or equipment problems
+  resulting from its use. This includes the switches, which send real commands to real
+  equipment.
+- **Not affiliated.** This is not an official AndSolar product. It was built against the AndSolar
+  OpenAPI and may stop working if AndSolar changes or withdraws that API.
+- **Your account, your responsibility.** Use only an OpenAPI account you are entitled to use, and
+  make sure your use complies with the terms that came with it (for example limits on automated
+  requests). Keep the polling interval reasonable.
+- **Trademarks and images.** Product names, trademarks and logos belong to their respective
+  owners. The MIT license below covers the source code only; it does not grant any rights to
+  third-party names, logos or images.
+
+## Privacy
+
+Your OpenAPI username and password are stored in your Home Assistant configuration (the
+integration's config entry) on your own system. They are sent only to the server URL you
+configure (production by default). The integration has no telemetry and sends nothing to the
+author. Do not share Home Assistant backups, diagnostics or logs without checking them first.
+
+## License
+
+Released under the [MIT License](LICENSE). Copyright (c) 2026 armyjam.
 
 ## Development
 
