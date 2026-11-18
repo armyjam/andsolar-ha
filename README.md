@@ -71,4 +71,4 @@ The tests cover the client (against a local mock server) and the parsing helpers
 import Home Assistant, so the integration code itself needs a manual check in a real Home
 Assistant instance.
 
-Credentials are never stored in the repo. Do not commit tokens or passwords.
+
