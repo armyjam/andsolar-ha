@@ -1,6 +1,6 @@
 {
   "domain": "andsolar",
-  "name": "AndSolar",
+  "name": "AndSolar AndCloud",
   "codeowners": [],
   "config_flow": true,
   "documentation": "https://github.com/armyjam/andsolar-ha",
