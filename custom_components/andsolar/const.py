@@ -6,7 +6,7 @@ from homeassistant.const import Platform
 
 DOMAIN = "andsolar"
 MANUFACTURER = "AndSolar"
-INTEGRATION_VERSION = "1.1.0-beta.2"
+INTEGRATION_VERSION = "1.1.0-beta.3"
 
 CONF_BASE_URL = "base_url"
 CONF_SCAN_INTERVAL = "scan_interval"  # minutes

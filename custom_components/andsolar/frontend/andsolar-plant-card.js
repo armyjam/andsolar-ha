@@ -6,9 +6,9 @@
  * and configurable YAML / visual editor options.
  */
 
-const CARD_VERSION = "1.1.0-beta.2";
+const CARD_VERSION = "1.1.0-beta.3";
 
-const ADDITIVE_METRICS = new Set(["daily_energy", "total_energy", "power"]);
+const SPLIT_METRICS = new Set(["daily_energy", "total_energy", "power", "voltage"]);
 const SHARED_DEVICE_MODES = new Set(["average", "primary", "raw"]);
 
 const METRIC_DEFS = {
@@ -546,7 +546,7 @@ class AndSolarPlantCard extends HTMLElement {
         Number.isFinite(rawVal) &&
         mode === "average" &&
         sharedCount > 1 &&
-        ADDITIVE_METRICS.has(metricKey)
+        SPLIT_METRICS.has(metricKey)
       ) {
         displayValues[metricKey] = rawVal / sharedCount;
       } else {
@@ -1060,7 +1060,7 @@ class AndSolarPlantCard extends HTMLElement {
         <span>Status</span><span class="tip-val">${esc(stMeta.label)}</span>
         <span>Power</span><span class="tip-val">${fmtAdditive("power", "W", 0)}${mode === "average" ? esc(ratedTxt) : ""}</span>
         <span>Today</span><span class="tip-val">${fmtAdditive("daily_energy", "kWh", 2)}</span>
-        <span>Voltage</span><span class="tip-val">${formatNumber(v.voltage, 1)} V</span>
+        <span>Voltage</span><span class="tip-val">${fmtAdditive("voltage", "V", 1)}</span>
         <span>Current</span><span class="tip-val">${formatNumber(v.current, 2)} A</span>
         <span>Temp</span><span class="tip-val">${formatNumber(v.temperature, 1)} °C</span>
         <span>Total</span><span class="tip-val">${fmtAdditive("total_energy", "kWh", 1)}</span>
@@ -1218,12 +1218,24 @@ class AndSolarPlantCard extends HTMLElement {
     // Update summary badge
     const summaryBadge = root.getElementById("summaryBadge");
     if (summaryBadge) {
-      if (uniqueSourceValues.length) {
-        const sum = uniqueSourceValues.reduce((a, b) => a + b, 0);
-        const aggVal =
-          metric.agg === "sum" ? sum : sum / uniqueSourceValues.length;
-        const aggPrefix = metric.agg === "sum" ? "Total" : "Avg";
-        summaryBadge.textContent = `${aggPrefix}: ${formatNumber(aggVal, metric.decimals)} ${metric.unit}`;
+      const mode = this._config.shared_device_mode || "average";
+      if (metric.agg === "sum") {
+        if (uniqueSourceValues.length) {
+          const sum = uniqueSourceValues.reduce((a, b) => a + b, 0);
+          summaryBadge.textContent = `Total: ${formatNumber(sum, metric.decimals)} ${metric.unit}`;
+        } else {
+          summaryBadge.textContent = `— ${metric.unit}`;
+        }
+      } else if (mode === "average" && SPLIT_METRICS.has(metric.key)) {
+        if (displayNumeric.length) {
+          const avg = displayNumeric.reduce((a, b) => a + b, 0) / displayNumeric.length;
+          summaryBadge.textContent = `Avg: ${formatNumber(avg, metric.decimals)} ${metric.unit}`;
+        } else {
+          summaryBadge.textContent = `— ${metric.unit}`;
+        }
+      } else if (uniqueSourceValues.length) {
+        const avg = uniqueSourceValues.reduce((a, b) => a + b, 0) / uniqueSourceValues.length;
+        summaryBadge.textContent = `Avg: ${formatNumber(avg, metric.decimals)} ${metric.unit}`;
       } else {
         summaryBadge.textContent = `— ${metric.unit}`;
       }

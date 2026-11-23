@@ -155,7 +155,7 @@ tap_action: select
 | `title` | string | plant name | Custom title shown when `show_title: true`. |
 | `show_title` | boolean | `false` | Show a card title header above the toolbar. |
 | `default_metric` | string | `daily_energy` | Initial metric: `daily_energy`, `power`, `current`, `voltage`, `temperature`, or `total_energy`. |
-| `shared_device_mode` | string | `average` | How 1:2 (or 1:N) shared optimizers are displayed: `average` (divides power/energy by panel count, e.g. ÷2), `primary` (shows combined actual value on the first panel only and leaves linked partner panels blank), or `raw` (shows the raw device value on every panel). Summary totals never double-count in any mode. |
+| `shared_device_mode` | string | `average` | How 1:2 (or 1:N) shared optimizers are displayed: `average` (divides power, energy, and voltage by panel count, e.g. ÷2; keeps current and temperature as-is), `primary` (shows combined actual value on the first panel only and leaves linked partner panels blank), or `raw` (shows the raw device value on every panel). Summary totals never double-count in any mode. |
 | `metrics` | list | all 6 metrics | Limit which metrics appear in the dropdown selector. |
 | `height` | integer | `320` | Canvas height in pixels (`140`–`1400`). |
 | `rotation` | number | `0` | Rotate the entire layout clockwise in degrees (`-180` to `180`). The North compass rotates with it. |
