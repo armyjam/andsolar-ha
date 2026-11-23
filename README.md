@@ -4,7 +4,8 @@ Custom integration that shows AndSolar plants, rapid shutdown devices and module
 in Home Assistant, and lets you switch them on and off. It talks to the AndSolar OpenAPI
 (`https://ap.andsolartech.com`, production).
 
-[![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=armyjam&repository=andsolar-ha&category=integration)
+<a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=armyjam&repository=andsolar-ha&category=integration" target="_blank" rel="noreferrer"><img src="https://my.home-assistant.io/badges/hacs_repository.svg" alt="Open your Home Assistant instance and open this repository in HACS." height="40" /></a>
+<a href="https://buymeacoffee.com/armyjam" target="_blank" rel="noreferrer"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="40" /></a>
 
 > **Unofficial project.** This integration is an independent, community-made project. It is
 > **not affiliated with, endorsed by, or supported by AndSolar** or Home Assistant. "AndSolar" and
@@ -293,6 +294,12 @@ Your OpenAPI username and password are stored in your Home Assistant configurati
 integration's config entry) on your own system. They are sent only to the server URL you
 configure (production by default). The integration has no telemetry and sends nothing to the
 author. Do not share Home Assistant backups, diagnostics or logs without checking them first.
+
+## Support
+
+If this integration is helpful to you, you can support ongoing development by buying me a coffee:
+
+<a href="https://buymeacoffee.com/armyjam" target="_blank" rel="noreferrer"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="45" /></a>
 
 ## License
 
