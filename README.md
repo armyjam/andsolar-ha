@@ -113,6 +113,8 @@ title: Roof Solar Layout
 show_title: true
 default_metric: power
 shared_device_mode: average   # average (÷2 for 1:2) | primary (first panel only) | raw
+temp_min: 20                  # Cool end of temperature color scale (°C)
+temp_max: 85                  # Hot end of temperature color scale (°C)
 metrics:
   - daily_energy
   - power
@@ -156,6 +158,8 @@ tap_action: select
 | `show_title` | boolean | `false` | Show a card title header above the toolbar. |
 | `default_metric` | string | `daily_energy` | Initial metric: `daily_energy`, `power`, `current`, `voltage`, `temperature`, or `total_energy`. |
 | `shared_device_mode` | string | `average` | How 1:2 (or 1:N) shared optimizers are displayed: `average` (divides power, energy, and voltage by panel count, e.g. ÷2; keeps current and temperature as-is), `primary` (shows combined actual value on the first panel only and leaves linked partner panels blank), or `raw` (shows the raw device value on every panel). Summary totals never double-count in any mode. |
+| `temp_min` | number | `20` | Cool end (°C) of the fixed thermal color scale for the Temperature view. |
+| `temp_max` | number | `85` | Hot end (°C) of the fixed thermal color scale for the Temperature view. |
 | `metrics` | list | all 6 metrics | Limit which metrics appear in the dropdown selector. |
 | `height` | integer | `320` | Canvas height in pixels (`140`–`1400`). |
 | `rotation` | number | `0` | Rotate the entire layout clockwise in degrees (`-180` to `180`). The North compass rotates with it. |

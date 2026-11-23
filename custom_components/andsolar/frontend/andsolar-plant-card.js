@@ -6,7 +6,7 @@
  * and configurable YAML / visual editor options.
  */
 
-const CARD_VERSION = "1.1.0-beta.3";
+const CARD_VERSION = "1.1.0-beta.4";
 
 const SPLIT_METRICS = new Set(["daily_energy", "total_energy", "power", "voltage"]);
 const SHARED_DEVICE_MODES = new Set(["average", "primary", "raw"]);
@@ -54,7 +54,16 @@ const METRIC_DEFS = {
     shortLabel: "Temperature",
     unit: "°C",
     decimals: 1,
-    palette: ["#38bdf8", "#ea580c"],
+    // Fixed thermal scale (default 20–85 °C): cool blue -> calm teal -> warm amber -> hot orange -> red
+    palette: [
+      [0.0, "#1d4ed8"],
+      [0.25, "#0284c7"],
+      [0.45, "#0f766e"],
+      [0.68, "#d97706"],
+      [0.85, "#ea580c"],
+      [1.0, "#dc2626"],
+    ],
+    fixedTempRange: true,
     agg: "avg",
   },
   total_energy: {
@@ -84,6 +93,8 @@ const DEFAULT_CONFIG = {
   show_title: false,
   default_metric: "daily_energy",
   shared_device_mode: "average",
+  temp_min: 20,
+  temp_max: 85,
   metrics: undefined,
   show_header: true,
   show_metric_selector: true,
@@ -138,6 +149,33 @@ function lerpColor(hexA, hexB, t) {
   const g = Math.round(a[1] + (b[1] - a[1]) * clamped);
   const bl = Math.round(a[2] + (b[2] - a[2]) * clamped);
   return `rgb(${r}, ${g}, ${bl})`;
+}
+
+function samplePalette(palette, t) {
+  const clamped = clamp(t, 0, 1);
+  if (!Array.isArray(palette) || !palette.length) return "#3b82f6";
+  if (typeof palette[0] === "string") {
+    return lerpColor(palette[0], palette[palette.length - 1], clamped);
+  }
+  if (clamped <= palette[0][0]) return palette[0][1];
+  for (let i = 1; i < palette.length; i++) {
+    const [posB, colB] = palette[i];
+    if (clamped <= posB) {
+      const [posA, colA] = palette[i - 1];
+      const span = posB - posA || 1;
+      return lerpColor(colA, colB, (clamped - posA) / span);
+    }
+  }
+  return palette[palette.length - 1][1];
+}
+
+function paletteGradientCss(palette) {
+  if (!Array.isArray(palette) || !palette.length) return "#3b82f6";
+  if (typeof palette[0] === "string") {
+    return `linear-gradient(90deg, ${palette.join(", ")})`;
+  }
+  const stops = palette.map(([pos, col]) => `${col} ${Math.round(pos * 100)}%`);
+  return `linear-gradient(90deg, ${stops.join(", ")})`;
 }
 
 function formatNumber(val, decimals) {
@@ -294,6 +332,30 @@ class AndSolarPlantCard extends HTMLElement {
         },
         {
           type: "expandable",
+          title: "Temperature color scale",
+          schema: [
+            {
+              type: "grid",
+              name: "",
+              schema: [
+                {
+                  name: "temp_min",
+                  selector: {
+                    number: { min: -20, max: 60, unit_of_measurement: "°C", mode: "box" },
+                  },
+                },
+                {
+                  name: "temp_max",
+                  selector: {
+                    number: { min: 40, max: 120, unit_of_measurement: "°C", mode: "box" },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+        {
+          type: "expandable",
           title: "Background image",
           schema: [
             { name: "background_image", selector: { text: {} } },
@@ -311,6 +373,8 @@ class AndSolarPlantCard extends HTMLElement {
           show_title: "Show card title",
           default_metric: "Default metric",
           shared_device_mode: "1:2 / shared optimizer display",
+          temp_min: "Cool temperature (scale min)",
+          temp_max: "Hot temperature (scale max)",
           tap_action: "Panel tap action",
           height: "Canvas height",
           rotation: "Layout rotation",
@@ -361,6 +425,14 @@ class AndSolarPlantCard extends HTMLElement {
     if (!SHARED_DEVICE_MODES.has(merged.shared_device_mode)) {
       merged.shared_device_mode = DEFAULT_CONFIG.shared_device_mode;
     }
+
+    const tempMin = Number(merged.temp_min);
+    const tempMax = Number(merged.temp_max);
+    merged.temp_min = Number.isFinite(tempMin) ? tempMin : DEFAULT_CONFIG.temp_min;
+    merged.temp_max =
+      Number.isFinite(tempMax) && tempMax > merged.temp_min
+        ? tempMax
+        : Math.max(merged.temp_min + 10, DEFAULT_CONFIG.temp_max);
 
     merged.height = clamp(Number(merged.height) || DEFAULT_CONFIG.height, 140, 1400);
     merged.min_zoom = clamp(Number(merged.min_zoom) || DEFAULT_CONFIG.min_zoom, 0.2, 1);
@@ -1119,13 +1191,10 @@ class AndSolarPlantCard extends HTMLElement {
     const stMeta = STATUS_META[live.status] || STATUS_META.unknown;
     const v = live.values;
     const isShared = live.sharedCount > 1;
-    const mode = this._config.shared_device_mode || "average";
     const branchLabel =
       p.device_type === "rapidShutdown" ? ` · Branch ${p.branch}` : "";
     const sharedPill = isShared
-      ? `<span class="detail-pill">1:${live.sharedCount}${
-          mode === "average" ? ` (÷${live.sharedCount})` : " combined"
-        }</span>`
+      ? `<span class="detail-pill">1:${live.sharedCount}</span>`
       : "";
     const stringLabel =
       p.inverter || p.string ? ` · Inv ${p.inverter ?? "?"}/Str ${p.string ?? "?"}` : "";
@@ -1200,8 +1269,16 @@ class AndSolarPlantCard extends HTMLElement {
       .map(({ live }) => live.values[metric.key])
       .filter((v) => v !== null && v !== undefined && Number.isFinite(v));
 
-    const minVal = displayNumeric.length ? Math.min(...displayNumeric) : 0;
-    const maxVal = displayNumeric.length ? Math.max(...displayNumeric) : 0;
+    const minVal = metric.fixedTempRange
+      ? this._config.temp_min
+      : displayNumeric.length
+        ? Math.min(...displayNumeric)
+        : 0;
+    const maxVal = metric.fixedTempRange
+      ? this._config.temp_max
+      : displayNumeric.length
+        ? Math.max(...displayNumeric)
+        : 0;
 
     // Deduplicate by measurement source so 1:2 / 1:N optimizers are never double-counted
     const uniqueSourceValues = [];
@@ -1245,10 +1322,11 @@ class AndSolarPlantCard extends HTMLElement {
     const scaleMin = root.getElementById("scaleMin");
     const scaleMax = root.getElementById("scaleMax");
     const scaleGrad = root.getElementById("scaleGradient");
-    if (scaleMin) scaleMin.textContent = formatNumber(minVal, metric.decimals);
-    if (scaleMax) scaleMax.textContent = `${formatNumber(maxVal, metric.decimals)} ${metric.unit}`;
+    const scaleDecimals = metric.fixedTempRange ? 0 : metric.decimals;
+    if (scaleMin) scaleMin.textContent = formatNumber(minVal, scaleDecimals);
+    if (scaleMax) scaleMax.textContent = `${formatNumber(maxVal, scaleDecimals)} ${metric.unit}`;
     if (scaleGrad) {
-      scaleGrad.style.background = `linear-gradient(90deg, ${metric.palette[0]}, ${metric.palette[1]})`;
+      scaleGrad.style.background = paletteGradientCss(metric.palette);
     }
 
     // Determine selected sourceKey for highlighting linked 1:2 partner panel
@@ -1284,7 +1362,7 @@ class AndSolarPlantCard extends HTMLElement {
       } else if (!hasVal) {
         fill = "#475569";
       } else {
-        fill = lerpColor(metric.palette[0], metric.palette[1], t);
+        fill = samplePalette(metric.palette, t);
       }
 
       const stMeta = STATUS_META[live.status] || STATUS_META.unknown;
