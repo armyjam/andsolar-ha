@@ -11,9 +11,11 @@ from parsing import (  # noqa: E402
     BRANCH_TWO,
     MODULE_OPTIMIZER,
     RAPID_SHUTDOWN,
+    annotate_shared_panels,
     branch_key_for_index,
     branch_value,
     branches_for,
+    effective_branch_key,
     extract_polygon_coords,
     layout_bounds,
     mos_state,
@@ -246,6 +248,40 @@ class ParsingTests(unittest.TestCase):
         self.assertEqual(
             opt_ids["temperature"], ("sensor", "andsolar_SN2_branchOne_outputTemperature")
         )
+
+    def test_effective_branch_key_and_shared_optimizer_layout(self):
+        # 1:2 module optimizer always reports on branchOne even if layout marks branch 2
+        self.assertEqual(effective_branch_key(MODULE_OPTIMIZER, 1), (1, BRANCH_ONE))
+        self.assertEqual(effective_branch_key(MODULE_OPTIMIZER, 2), (2, BRANCH_ONE))
+        # Single-branch rapid shutdown collapses to branchOne; dual-branch keeps both
+        self.assertEqual(effective_branch_key(RAPID_SHUTDOWN, 2, branch_num=1), (2, BRANCH_ONE))
+        self.assertEqual(effective_branch_key(RAPID_SHUTDOWN, 2, branch_num=2), (2, BRANCH_TWO))
+
+        # Dual-branch rapid shutdown panels have distinct sources -> shared_count = 1
+        rs_panels = parse_plant_layout(10494, VIEW_MODULES)
+        self.assertEqual([p["shared_count"] for p in rs_panels], [1, 1])
+
+        # 1:2 module optimizer sharing one SN -> both get branchOne, shared_count = 2
+        opt_modules = [
+            {**VIEW_MODULES[0], "deviceType": MODULE_OPTIMIZER, "branch": 2},
+            {**VIEW_MODULES[1], "deviceType": MODULE_OPTIMIZER, "branch": 1},
+        ]
+        opt_panels = parse_plant_layout(10494, opt_modules)
+        self.assertEqual([p["branch_key"] for p in opt_panels], [BRANCH_ONE, BRANCH_ONE])
+        self.assertEqual([p["shared_count"] for p in opt_panels], [2, 2])
+        # Branch 1 (id 92309) gets shared_index 0 (primary), branch 2 (id 92310) gets 1
+        by_id = {p["id"]: p for p in opt_panels}
+        self.assertEqual(by_id[92309]["shared_index"], 0)
+        self.assertEqual(by_id[92310]["shared_index"], 1)
+
+        # annotate_shared_panels works deterministically by id when branches are identical
+        same_branch = [
+            {"id": 200, "sn": "OPT1", "branch": 1, "branch_key": BRANCH_ONE},
+            {"id": 100, "sn": "OPT1", "branch": 1, "branch_key": BRANCH_ONE},
+        ]
+        annotate_shared_panels(same_branch)
+        self.assertEqual(same_branch[1]["shared_index"], 0)
+        self.assertEqual(same_branch[0]["shared_index"], 1)
 
 
 if __name__ == "__main__":
