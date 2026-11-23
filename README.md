@@ -66,7 +66,119 @@ One Home Assistant device per plant, and one per rapid shutdown device / module 
 
 Polling interval defaults to 5 minutes (**Configure** on the integration page, 1 to 60
 minutes). Each update makes one request per device, so keep the interval sensible on large
-plants.
+plants. Panel layout polygons (`/module/getViewListNoData`) are cached with topology and
+refreshed every 6 hours (or when you reload the integration), so the layout view does not
+add extra polling overhead.
+
+## Plant Layout Card
+
+The integration bundles a custom Lovelace card (`custom:andsolar-plant-card`) that renders
+your panels using the polygon coordinates configured in AndCloud, shaded by live values
+from your Home Assistant entities.
+
+The card is registered automatically when the integration loads — **no separate HACS
+frontend download or manual Lovelace resource is required**. After updating, restart Home
+Assistant and refresh your browser.
+
+### Features
+
+- **Real panel geometry** from AndCloud (`getViewListNoData`), with optional layout rotation
+  and custom roof background image.
+- **Live metric switching** directly on the card: Today Yield (kWh), Power (W), Current (A),
+  Voltage (V), Temperature (°C), and Cumulative Yield (kWh).
+- **Status indicators** on every panel: On (green), Off (red), Warning (amber), Offline (gray).
+- **Interactive inspection**: hover tooltip with all metrics, click a panel for the detail
+  bar with one-click Home Assistant **History** (More Info) and optional **Turn On / Turn Off**
+  output switch control.
+- **Zoom & pan**: mouse wheel zoom, drag to pan, touch pinch-to-zoom, double-click to reset,
+  and optional `+` / `−` / reset zoom buttons.
+- **Visual editor & YAML**: configure via the Home Assistant Dashboard UI or YAML.
+
+### Quick start
+
+Add the **AndSolar Plant Layout** card from the Dashboard Card Picker, or switch to YAML:
+
+```yaml
+type: custom:andsolar-plant-card
+```
+
+If you only have one plant, `plant_id` is detected automatically.
+
+### Full YAML example
+
+```yaml
+type: custom:andsolar-plant-card
+plant_id: 10494
+title: Roof Solar Layout
+show_title: true
+default_metric: power
+metrics:
+  - daily_energy
+  - power
+  - voltage
+  - current
+  - temperature
+  - total_energy
+height: 360
+rotation: 0
+show_header: true
+show_metric_selector: true
+show_summary: true
+show_legend: true
+show_scale: true
+show_compass: true
+show_grid: true
+show_cell_pattern: true
+show_values: true
+show_unit_on_panel: false
+show_sn: false
+show_status_dot: true
+show_tooltip: true
+show_detail_bar: true
+show_switch_control: true
+enable_zoom_pan: true
+show_zoom_controls: true
+min_zoom: 0.5
+max_zoom: 6
+tap_action: select
+# Optional roof background image (place file in config/www/)
+# background_image: /local/roof.jpg
+# background_opacity: 0.35
+```
+
+### Card configuration options
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `plant_id` | integer | auto | AndSolar plant ID. Optional when you have a single plant. |
+| `title` | string | plant name | Custom title shown when `show_title: true`. |
+| `show_title` | boolean | `false` | Show a card title header above the toolbar. |
+| `default_metric` | string | `daily_energy` | Initial metric: `daily_energy`, `power`, `current`, `voltage`, `temperature`, or `total_energy`. |
+| `metrics` | list | all 6 metrics | Limit which metrics appear in the dropdown selector. |
+| `height` | integer | `320` | Canvas height in pixels (`140`–`1400`). |
+| `rotation` | number | `0` | Rotate the entire layout clockwise in degrees (`-180` to `180`). The North compass rotates with it. |
+| `show_header` | boolean | `true` | Show the top toolbar (metric dropdown, summary badge, legend). |
+| `show_metric_selector` | boolean | `true` | Show the metric dropdown in the toolbar. |
+| `show_summary` | boolean | `true` | Show the total/average summary badge next to the dropdown. |
+| `show_legend` | boolean | `true` | Show the On / Off / Warning / Offline legend. |
+| `show_scale` | boolean | `true` | Show the min–max color gradient scale bar. |
+| `show_compass` | boolean | `true` | Show the North compass indicator. |
+| `show_grid` | boolean | `true` | Show the subtle background dot grid. |
+| `show_cell_pattern` | boolean | `true` | Show subtle solar cell grid texture on panels. |
+| `show_values` | boolean | `true` | Show numeric values centered on each panel. |
+| `show_unit_on_panel` | boolean | `false` | Append the unit after the value inside each panel. |
+| `show_sn` | boolean | `false` | Show the short device serial number (and branch) on each panel. |
+| `show_status_dot` | boolean | `true` | Show the colored status dot in each panel corner. |
+| `show_tooltip` | boolean | `true` | Show the hover tooltip with all panel metrics. |
+| `show_detail_bar` | boolean | `true` | Show the bottom detail bar when a panel is selected. |
+| `show_switch_control` | boolean | `true` | Show the Turn On / Turn Off switch button in the detail bar (set `false` for read-only dashboards). |
+| `enable_zoom_pan` | boolean | `true` | Enable mouse wheel zoom, drag to pan, and touch pinch-to-zoom. |
+| `show_zoom_controls` | boolean | `true` | Show the `+`, `−`, and reset (`100%`) zoom control buttons on the canvas. |
+| `min_zoom` | number | `0.5` | Minimum zoom factor (`0.2`–`1`). |
+| `max_zoom` | number | `6` | Maximum zoom factor (`1`–`20`). |
+| `tap_action` | string | `select` | What happens when tapping a panel: `select` (show detail bar), `more-info` (open HA entity history dialog), or `none`. |
+| `background_image` | string | `""` | Optional image URL (e.g. `/local/roof.jpg`) rendered behind panels. |
+| `background_opacity` | number | `0.35` | Opacity of `background_image` (`0`–`1`). |
 
 ## Safety
 
@@ -101,6 +213,11 @@ Do not post logs publicly without checking them first.
 **Switches take a while to react.** Commands go through the AndSolar cloud. The server may
 execute a command before its response reaches Home Assistant, so a switch can briefly show the
 old state; it settles on the next update.
+
+**Custom card does not appear after updating.** Restart Home Assistant and hard-refresh your
+browser (`Ctrl+Shift+R` / clear cache in the Companion App). If the card says no panel layout
+geometry was found, verify that module positions are configured on the Layout page in AndCloud
+and reload the AndSolar integration.
 
 ## Known caveats
 
@@ -142,10 +259,13 @@ Released under the [MIT License](LICENSE). Copyright (c) 2026 armyjam.
 custom_components/andsolar/
   api.py          blocking HTTP client (standard library only), token handling
   parsing.py      pure helpers (unit-tested without Home Assistant)
-  coordinator.py  polling, runs the client in an executor thread
+  coordinator.py  polling, topology & layout cache, runs client in executor thread
   config_flow.py  setup, re-authentication and options
   sensor.py       sensors
   switch.py       switches
+  websocket.py    WebSocket command (andsolar/get_plant_layout) for the layout card
+  frontend.py     static path & extra JS registration for the bundled card
+  frontend/       bundled Lovelace card (andsolar-plant-card.js)
   brand/          icon shown in Home Assistant (2026.3 and newer)
 tests/            python -m unittest discover -s tests -v
 ```

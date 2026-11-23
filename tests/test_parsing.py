@@ -9,9 +9,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "custom_components"
 from parsing import (  # noqa: E402
     BRANCH_ONE,
     BRANCH_TWO,
+    MODULE_OPTIMIZER,
+    RAPID_SHUTDOWN,
+    branch_key_for_index,
     branch_value,
     branches_for,
+    extract_polygon_coords,
+    layout_bounds,
     mos_state,
+    panel_entity_unique_ids,
+    panel_metrics,
+    parse_plant_layout,
     parse_topology,
     to_float,
 )
@@ -49,6 +57,44 @@ GROUPS = [
     },
 ]
 
+# Shape taken from /api/openapi/module/getViewListNoData.
+VIEW_MODULES = [
+    {
+        "id": 92310,
+        "position": (
+            '{"type":"Feature","state":{},"geometry":{"type":"Polygon","coordinates":[[['
+            "120.51621917635202,31.236256391057438],[120.51622152328491,31.236236753937533],"
+            "[120.51620962098241,31.236235750580917],[120.51620727404952,31.236255387701064],"
+            '[120.51621917635202,31.236256391057438]]]},"properties":{},"id":1208460}'
+        ),
+        "deviceId": 9091,
+        "deviceSn": "AB2220324C0108A",
+        "collectorSn": "BB0210924C0049A",
+        "branch": 2,
+        "power": 550,
+        "deviceType": "rapidShutdown",
+        "data": None,
+    },
+    {
+        "id": 92309,
+        "position": (
+            '{"type":"Feature","state":{"hover":false},"geometry":{"type":"Polygon","coordinates":[[['
+            "120.51620710641146,31.236255387701064],[120.51620945334435,31.236235750580917],"
+            "[120.51619738340378,31.236234747224316],[120.51619503647089,31.236254384344647],"
+            '[120.51620710641146,31.236255387701064]]]},"properties":{},"id":1208459}'
+        ),
+        "deviceId": 9091,
+        "deviceSn": "AB2220324C0108A",
+        "collectorSn": "BB0210924C0049A",
+        "branch": 1,
+        "power": 550,
+        "deviceType": "rapidShutdown",
+        "data": None,
+    },
+    {"id": 92311, "deviceSn": "BADJSON", "position": "{not-json", "branch": 1},
+    {"id": 92312, "position": None, "branch": 1},
+]
+
 
 class ParsingTests(unittest.TestCase):
     def test_to_float(self):
@@ -78,6 +124,12 @@ class ParsingTests(unittest.TestCase):
         self.assertEqual(branches_for("moduleOptimizer", 1), [BRANCH_ONE])
         self.assertEqual(branches_for(None, 2), [BRANCH_ONE])
 
+    def test_branch_key_for_index(self):
+        self.assertEqual(branch_key_for_index(1), (1, BRANCH_ONE))
+        self.assertEqual(branch_key_for_index(2), (2, BRANCH_TWO))
+        self.assertEqual(branch_key_for_index("2"), (2, BRANCH_TWO))
+        self.assertEqual(branch_key_for_index(None), (1, BRANCH_ONE))
+
     def test_branch_value_and_mos(self):
         latest = {
             "deviceType": "rapidShutdown",
@@ -90,6 +142,110 @@ class ParsingTests(unittest.TestCase):
         self.assertTrue(mos_state(latest, BRANCH_ONE))
         self.assertFalse(mos_state(latest, BRANCH_TWO))
         self.assertIsNone(mos_state({"branchOne": {}}, BRANCH_ONE))
+
+    def test_extract_polygon_coords(self):
+        poly = {
+            "type": "Polygon",
+            "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]],
+        }
+        self.assertEqual(
+            extract_polygon_coords(poly), [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
+        )
+        multi = {
+            "type": "MultiPolygon",
+            "coordinates": [[[[0, 0], [2, 0], [2, 2], [0, 0]]]],
+        }
+        self.assertEqual(extract_polygon_coords(multi), [(0.0, 0.0), (2.0, 0.0), (2.0, 2.0)])
+        self.assertIsNone(extract_polygon_coords(None))
+        self.assertIsNone(extract_polygon_coords("{invalid"))
+        self.assertIsNone(extract_polygon_coords({"type": "Point", "coordinates": [1, 2]}))
+
+    def test_parse_plant_layout(self):
+        panels = parse_plant_layout(10494, VIEW_MODULES)
+        self.assertEqual(len(panels), 2)
+        self.assertEqual([p["id"] for p in panels], [92310, 92309])
+        self.assertEqual(panels[0]["branch"], 2)
+        self.assertEqual(panels[0]["branch_key"], BRANCH_TWO)
+        self.assertEqual(panels[1]["branch"], 1)
+        self.assertEqual(panels[1]["branch_key"], BRANCH_ONE)
+        self.assertEqual(panels[0]["rated_power"], 550.0)
+        # Closing vertex is stripped -> 4 corners
+        self.assertEqual(len(panels[0]["points"]), 4)
+
+        bounds = layout_bounds(panels)
+        # Two adjacent ~1.14m x 2.19m panels side-by-side -> ~2.5m wide x ~2.4m tall
+        self.assertGreater(bounds["width"], 2.0)
+        self.assertLess(bounds["width"], 3.0)
+        self.assertGreater(bounds["height"], 2.0)
+        self.assertLess(bounds["height"], 2.8)
+
+        # Normalized to origin (0, 0)
+        all_x = [pt[0] for p in panels for pt in p["points"]]
+        all_y = [pt[1] for p in panels for pt in p["points"]]
+        self.assertEqual(min(all_x), 0.0)
+        self.assertEqual(min(all_y), 0.0)
+
+    def test_parse_plant_layout_handles_empty(self):
+        self.assertEqual(parse_plant_layout(1, None), [])
+        self.assertEqual(layout_bounds([]), {"width": 0.0, "height": 0.0})
+
+    def test_panel_metrics_rapid_shutdown_and_optimizer(self):
+        rs_latest = {
+            "branchOne": {
+                "dailyPowerGeneration": "1.24",
+                "totalGeneration": "412.5",
+                "totalOutputPower": 342,
+                "voltage": "38.8",
+                "current": "8.81",
+                "temperature": 47.2,
+                "mos": 1,
+                "deviceStatus": "HEALTHY",
+            },
+            "branchTwo": {
+                "totalOutputPower": 0,
+                "mos": 0,
+                "deviceStatus": "healthy",
+            },
+        }
+        m1 = panel_metrics(rs_latest, RAPID_SHUTDOWN, BRANCH_ONE)
+        self.assertEqual(m1["status"], "on")
+        self.assertEqual(m1["values"]["daily_energy"], 1.24)
+        self.assertEqual(m1["values"]["power"], 342.0)
+        self.assertEqual(m1["values"]["voltage"], 38.8)
+
+        m2 = panel_metrics(rs_latest, RAPID_SHUTDOWN, BRANCH_TWO)
+        self.assertEqual(m2["status"], "off")
+        self.assertFalse(m2["mos"])
+
+        opt_latest = {
+            "branchOne": {
+                "dailyPowerGeneration": 2.05,
+                "totalOutputPower": 455,
+                "outputVoltage": 39.4,
+                "outputCurrent": 11.55,
+                "pcbTemperature": 50.1,
+                "deviceStatus": "warning",
+            }
+        }
+        mo = panel_metrics(opt_latest, MODULE_OPTIMIZER, BRANCH_ONE)
+        self.assertEqual(mo["status"], "warning")
+        self.assertEqual(mo["values"]["voltage"], 39.4)
+        self.assertEqual(mo["values"]["temperature"], 50.1)
+
+        offline = panel_metrics(None, RAPID_SHUTDOWN, BRANCH_ONE)
+        self.assertEqual(offline["status"], "offline")
+
+    def test_panel_entity_unique_ids(self):
+        rs_ids = panel_entity_unique_ids("andsolar", "SN1", RAPID_SHUTDOWN, BRANCH_TWO)
+        self.assertEqual(rs_ids["power"], ("sensor", "andsolar_SN1_branchTwo_totalOutputPower"))
+        self.assertEqual(rs_ids["voltage"], ("sensor", "andsolar_SN1_branchTwo_voltage"))
+        self.assertEqual(rs_ids["switch"], ("switch", "andsolar_SN1_branchTwo_switch"))
+
+        opt_ids = panel_entity_unique_ids("andsolar", "SN2", MODULE_OPTIMIZER, BRANCH_ONE)
+        self.assertEqual(opt_ids["voltage"], ("sensor", "andsolar_SN2_branchOne_outputVoltage"))
+        self.assertEqual(
+            opt_ids["temperature"], ("sensor", "andsolar_SN2_branchOne_outputTemperature")
+        )
 
 
 if __name__ == "__main__":

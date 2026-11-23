@@ -6,6 +6,7 @@ from homeassistant.const import Platform
 
 DOMAIN = "andsolar"
 MANUFACTURER = "AndSolar"
+INTEGRATION_VERSION = "1.1.0"
 
 CONF_BASE_URL = "base_url"
 CONF_SCAN_INTERVAL = "scan_interval"  # minutes
@@ -17,5 +18,8 @@ DEFAULT_SCAN_INTERVAL = 5
 TOPOLOGY_REFRESH = timedelta(hours=6)
 # Parallel latestData requests per update.
 MAX_WORKERS = 8
+
+FRONTEND_URL_BASE = "/andsolar_static"
+CARD_FILENAME = "andsolar-plant-card.js"
 
 PLATFORMS = [Platform.SENSOR, Platform.SWITCH]
