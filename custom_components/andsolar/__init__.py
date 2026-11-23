@@ -5,6 +5,7 @@ from __future__ import annotations
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.typing import ConfigType
 
 from .api import AndSolarClient
 from .const import (
@@ -17,10 +18,31 @@ from .const import (
     PLATFORMS,
 )
 from .coordinator import AndSolarConfigEntry, AndSolarCoordinator
+from .frontend import async_register_frontend
+from .websocket import async_register_websocket_commands
+
+_WS_REGISTERED_KEY = "ws_registered"
+
+
+async def _async_register_resources(hass: HomeAssistant) -> None:
+    """Register WebSocket commands and bundled frontend card once."""
+    domain_data = hass.data.setdefault(DOMAIN, {})
+    if not domain_data.get(_WS_REGISTERED_KEY):
+        async_register_websocket_commands(hass)
+        domain_data[_WS_REGISTERED_KEY] = True
+    await async_register_frontend(hass)
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Set up global AndSolar resources (WebSocket API and Lovelace card)."""
+    await _async_register_resources(hass)
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: AndSolarConfigEntry) -> bool:
     """Set up AndSolar from a config entry."""
+    await _async_register_resources(hass)
+
     client = AndSolarClient(
         entry.data[CONF_USERNAME],
         entry.data[CONF_PASSWORD],

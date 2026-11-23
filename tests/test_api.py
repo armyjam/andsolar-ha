@@ -60,6 +60,15 @@ class Handler(BaseHTTPRequestHandler):
 
         if url.path == "/api/openapi/plant/queryList":
             return self._reply(200, {"code": 200, "msg": None, "data": [{"id": 1}]})
+        if url.path == "/api/openapi/module/getViewListNoData":
+            return self._reply(
+                200,
+                {
+                    "code": 200,
+                    "msg": None,
+                    "data": [{"id": 92310, "deviceSn": "AB2220324C0108A", "branch": 2}],
+                },
+            )
         if url.path == "/api/openapi/col/switch":
             return self._reply(200, {"code": 200, "data": True})
         if url.path == "/api/openapi/col/check":
@@ -136,6 +145,14 @@ class ClientTests(unittest.TestCase):
     def test_alarm_pagination_collects_all_rows(self):
         rows = list(self.client.iter_plant_alarms(10186, page_size=2))
         self.assertEqual([r["id"] for r in rows], [1, 2, 3, 4, 5])
+
+    def test_get_plant_view_passes_plant_id(self):
+        modules = self.client.get_plant_view(10494)
+        self.assertEqual(modules[0]["id"], 92310)
+        method, path, _, query, _ = STATE.requests[-1]
+        self.assertEqual(method, "GET")
+        self.assertEqual(path, "/api/openapi/module/getViewListNoData")
+        self.assertEqual(query["plantId"], "10494")
 
 
 if __name__ == "__main__":

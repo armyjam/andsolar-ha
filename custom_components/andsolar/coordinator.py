@@ -16,7 +16,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .api import AndSolarClient, AndSolarError, ApiError, AuthError
 from .const import DOMAIN, MAX_WORKERS, TOPOLOGY_REFRESH
-from .parsing import parse_topology
+from .parsing import parse_plant_layout, parse_topology
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -31,6 +31,8 @@ class AndSolarData:
     plants: dict[int, dict[str, Any]] = field(default_factory=dict)
     # serial number -> device info plus "latest" (latestData payload or None)
     devices: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # plant_id -> parsed panel polygons from /module/getViewListNoData
+    layouts: dict[int, list[dict[str, Any]]] = field(default_factory=dict)
 
 
 class AndSolarCoordinator(DataUpdateCoordinator[AndSolarData]):
@@ -54,8 +56,10 @@ class AndSolarCoordinator(DataUpdateCoordinator[AndSolarData]):
         )
         self.client = client
         self._topology: dict[int, list[dict[str, Any]]] = {}
+        self._layouts: dict[int, list[dict[str, Any]]] = {}
         self._topology_at = 0.0
         self._topology_warned = False
+        self._layout_warned = False
 
     async def _async_update_data(self) -> AndSolarData:
         try:
@@ -89,11 +93,19 @@ class AndSolarCoordinator(DataUpdateCoordinator[AndSolarData]):
                 for sn, latest in zip(list(devices), pool.map(self._fetch_latest, list(devices))):
                     devices[sn]["latest"] = latest
 
-        return AndSolarData(plants=plants, devices=devices)
+        layouts = {
+            plant_id: list(panels)
+            for plant_id, panels in self._layouts.items()
+            if plant_id in plants
+        }
+
+        return AndSolarData(plants=plants, devices=devices, layouts=layouts)
 
     def _refresh_topology(self, plant_ids: list[int]) -> None:
         topology: dict[int, list[dict[str, Any]]] = {}
+        layouts: dict[int, list[dict[str, Any]]] = {}
         failed = False
+        layout_failed = False
         for plant_id in plant_ids:
             try:
                 groups = self.client.plant_string_devices(plant_id)
@@ -103,7 +115,19 @@ class AndSolarCoordinator(DataUpdateCoordinator[AndSolarData]):
                 log = _LOGGER.debug if self._topology_warned else _LOGGER.warning
                 log("Could not read the device list of plant %s: %s", plant_id, err)
             topology[plant_id] = parse_topology(plant_id, groups)
+
+            try:
+                raw_view = self.client.get_plant_view(plant_id)
+                layouts[plant_id] = parse_plant_layout(plant_id, raw_view)
+            except ApiError as err:
+                layout_failed = True
+                layouts[plant_id] = list(self._layouts.get(plant_id, []))
+                log = _LOGGER.debug if self._layout_warned else _LOGGER.warning
+                log("Could not read the panel layout of plant %s: %s", plant_id, err)
+
         self._topology = topology
+        self._layouts = layouts
+        self._layout_warned = layout_failed
         if failed:
             # Retry on the next update instead of waiting for the cache to expire.
             self._topology_warned = True
