@@ -69,6 +69,50 @@ def branch_key_for_index(branch: Any) -> tuple[int, str]:
     return 1, BRANCH_ONE
 
 
+def effective_branch_key(
+    device_type: str | None,
+    branch: Any,
+    branch_num: int | None = None,
+) -> tuple[int, str]:
+    """Resolve the reporting branch key for a panel.
+
+    Module optimizers (including 1:2 dual-panel optimizers) and single-branch
+    rapid shutdown devices always report all measurements on ``branchOne``.
+    """
+    idx, key = branch_key_for_index(branch)
+    if device_type == MODULE_OPTIMIZER:
+        return idx, BRANCH_ONE
+    if device_type == RAPID_SHUTDOWN and branch_num is not None and branch_num < 2:
+        return idx, BRANCH_ONE
+    return idx, key
+
+
+def annotate_shared_panels(panels: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Annotate panels that share the same measurement source (e.g. 1:2 optimizer).
+
+    Sets ``shared_count`` (total panels sharing ``(sn, branch_key)``) and
+    ``shared_index`` (0-based deterministic index, ordered by branch then id).
+    """
+    groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for panel in panels:
+        group_key = (str(panel["sn"]), str(panel["branch_key"]))
+        groups.setdefault(group_key, []).append(panel)
+
+    for members in groups.values():
+        count = len(members)
+        ordered = sorted(
+            members,
+            key=lambda p: (
+                int(p.get("branch") or 1),
+                int(p["id"]) if p.get("id") is not None else 0,
+            ),
+        )
+        for index, member in enumerate(ordered):
+            member["shared_count"] = count
+            member["shared_index"] = index
+    return panels
+
+
 def branch_value(latest: Any, branch: str, field: str) -> Any:
     """Read latest[branch][field], tolerating missing or odd data."""
     if not isinstance(latest, dict):
@@ -168,7 +212,8 @@ def parse_plant_layout(
 
     panels: list[dict[str, Any]] = []
     for mod, ring in raw_items:
-        branch_index, branch_key = branch_key_for_index(mod.get("branch"))
+        device_type = mod.get("deviceType")
+        branch_index, branch_key = effective_branch_key(device_type, mod.get("branch"))
         points = [
             [
                 round((lon - min_lon) * lon_scale, 4),
@@ -183,14 +228,14 @@ def parse_plant_layout(
                 "sn": str(mod["deviceSn"]),
                 "device_id": mod.get("deviceId"),
                 "collector_sn": mod.get("collectorSn"),
-                "device_type": mod.get("deviceType"),
+                "device_type": device_type,
                 "branch": branch_index,
                 "branch_key": branch_key,
                 "rated_power": to_float(mod.get("power")),
                 "points": points,
             }
         )
-    return panels
+    return annotate_shared_panels(panels)
 
 
 def layout_bounds(panels: list[dict[str, Any]]) -> dict[str, float]:

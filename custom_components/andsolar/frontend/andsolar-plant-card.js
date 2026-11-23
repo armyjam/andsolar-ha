@@ -6,7 +6,10 @@
  * and configurable YAML / visual editor options.
  */
 
-const CARD_VERSION = "1.1.0";
+const CARD_VERSION = "1.1.0-beta.2";
+
+const ADDITIVE_METRICS = new Set(["daily_energy", "total_energy", "power"]);
+const SHARED_DEVICE_MODES = new Set(["average", "primary", "raw"]);
 
 const METRIC_DEFS = {
   daily_energy: {
@@ -80,6 +83,7 @@ const DEFAULT_CONFIG = {
   title: "",
   show_title: false,
   default_metric: "daily_energy",
+  shared_device_mode: "average",
   metrics: undefined,
   show_header: true,
   show_metric_selector: true,
@@ -179,6 +183,7 @@ class AndSolarPlantCard extends HTMLElement {
   static getStubConfig() {
     return {
       default_metric: "daily_energy",
+      shared_device_mode: "average",
       show_zoom_controls: true,
       enable_zoom_pan: true,
       show_legend: true,
@@ -203,6 +208,19 @@ class AndSolarPlantCard extends HTMLElement {
                 value: key,
                 label: METRIC_DEFS[key].label,
               })),
+            },
+          },
+        },
+        {
+          name: "shared_device_mode",
+          selector: {
+            select: {
+              mode: "dropdown",
+              options: [
+                { value: "average", label: "Average per panel (÷ 2 for 1:2 optimizer)" },
+                { value: "primary", label: "Actual value on first panel only" },
+                { value: "raw", label: "Raw device value on every panel" },
+              ],
             },
           },
         },
@@ -292,6 +310,7 @@ class AndSolarPlantCard extends HTMLElement {
           title: "Card title",
           show_title: "Show card title",
           default_metric: "Default metric",
+          shared_device_mode: "1:2 / shared optimizer display",
           tap_action: "Panel tap action",
           height: "Canvas height",
           rotation: "Layout rotation",
@@ -338,6 +357,9 @@ class AndSolarPlantCard extends HTMLElement {
     merged._allowedMetrics = allowedMetrics.length ? allowedMetrics : ALL_METRIC_KEYS;
     if (!merged._allowedMetrics.includes(merged.default_metric)) {
       merged.default_metric = merged._allowedMetrics[0];
+    }
+    if (!SHARED_DEVICE_MODES.has(merged.shared_device_mode)) {
+      merged.shared_device_mode = DEFAULT_CONFIG.shared_device_mode;
     }
 
     merged.height = clamp(Number(merged.height) || DEFAULT_CONFIG.height, 140, 1400);
@@ -511,7 +533,40 @@ class AndSolarPlantCard extends HTMLElement {
           ? false
           : panel.mos;
 
-    return { values, status, mosOn, switchEid };
+    const sharedCount = Math.max(1, Number(panel.shared_count) || 1);
+    const sharedIndex = Number(panel.shared_index) || 0;
+    const mode = this._config.shared_device_mode || "average";
+    const displayValues = {};
+
+    for (const metricKey of ALL_METRIC_KEYS) {
+      const rawVal = values[metricKey];
+      if (
+        rawVal !== null &&
+        rawVal !== undefined &&
+        Number.isFinite(rawVal) &&
+        mode === "average" &&
+        sharedCount > 1 &&
+        ADDITIVE_METRICS.has(metricKey)
+      ) {
+        displayValues[metricKey] = rawVal / sharedCount;
+      } else {
+        displayValues[metricKey] = rawVal;
+      }
+    }
+
+    const hidePanelValue =
+      mode === "primary" && sharedCount > 1 && sharedIndex > 0;
+
+    return {
+      rawValues: values,
+      values: displayValues,
+      status,
+      mosOn,
+      switchEid,
+      sharedCount,
+      sharedIndex,
+      hidePanelValue,
+    };
   }
 
   _buildGeometry() {
@@ -519,6 +574,25 @@ class AndSolarPlantCard extends HTMLElement {
     if (!panels.length) {
       this._geometry = null;
       return;
+    }
+
+    // Fallback shared-source grouping if payload lacks shared_count/shared_index
+    const sourceGroups = new Map();
+    for (const panel of panels) {
+      const sourceKey = `${panel.sn}:${panel.branch_key || "branchOne"}`;
+      if (!sourceGroups.has(sourceKey)) sourceGroups.set(sourceKey, []);
+      sourceGroups.get(sourceKey).push(panel);
+    }
+    for (const members of sourceGroups.values()) {
+      members.sort(
+        (a, b) =>
+          (Number(a.branch) || 1) - (Number(b.branch) || 1) ||
+          (Number(a.id) || 0) - (Number(b.id) || 0)
+      );
+      members.forEach((member, idx) => {
+        if (member.shared_count === undefined) member.shared_count = members.length;
+        if (member.shared_index === undefined) member.shared_index = idx;
+      });
     }
 
     const bounds = this._layout.bounds || { width: 0, height: 0 };
@@ -617,6 +691,9 @@ class AndSolarPlantCard extends HTMLElement {
 
       return {
         key: this._panelKey(panel),
+        sourceKey: `${panel.sn}:${panel.branch_key || "branchOne"}`,
+        sharedCount: Math.max(1, Number(panel.shared_count) || 1),
+        sharedIndex: Number(panel.shared_index) || 0,
         panel,
         pts,
         pointsAttr: pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" "),
@@ -918,6 +995,16 @@ class AndSolarPlantCard extends HTMLElement {
     this._updateDynamicView();
   }
 
+  _setPartnerHover(sourceKey, active) {
+    const layer = this.shadowRoot?.getElementById("panelsLayer");
+    if (!layer || !sourceKey) return;
+    for (const node of layer.children) {
+      if (node.dataset?.sourceKey === sourceKey) {
+        node.classList.toggle("partner-hover", active);
+      }
+    }
+  }
+
   _showTooltip(shape, live, event) {
     if (!this._config.show_tooltip || this._didDrag || this._pointers.size > 0) return;
     const tip = this.shadowRoot?.getElementById("tooltip");
@@ -927,9 +1014,42 @@ class AndSolarPlantCard extends HTMLElement {
     const p = shape.panel;
     const stMeta = STATUS_META[live.status] || STATUS_META.unknown;
     const v = live.values;
-    const ratedTxt = p.rated_power ? ` / ${Math.round(p.rated_power)} W` : "";
+    const raw = live.rawValues || v;
+    const mode = this._config.shared_device_mode || "average";
+    const isShared = live.sharedCount > 1;
     const branchTxt =
-      p.device_type === "rapidShutdown" ? ` B${p.branch}` : "";
+      p.device_type === "rapidShutdown"
+        ? ` B${p.branch}`
+        : isShared
+          ? ` 1:${live.sharedCount} (#${live.sharedIndex + 1})`
+          : "";
+
+    const ratedSingle = p.rated_power ? Math.round(p.rated_power) : null;
+    const ratedTxt = ratedSingle
+      ? mode === "average"
+        ? ` / ${ratedSingle} W`
+        : isShared
+          ? ` / ${ratedSingle * live.sharedCount} W`
+          : ` / ${ratedSingle} W`
+      : "";
+
+    const fmtAdditive = (key, unit, dec) => {
+      const disp = formatNumber(v[key], dec);
+      if (isShared && mode === "average" && raw[key] !== null && raw[key] !== undefined) {
+        return `${disp} ${unit} <span class="tip-muted">(${formatNumber(raw[key], dec)} total)</span>`;
+      }
+      return `${disp} ${unit}`;
+    };
+
+    const sharedNote = isShared
+      ? `<div class="tip-note">${
+          mode === "average"
+            ? `Shared 1:${live.sharedCount} optimizer · per-panel avg (÷${live.sharedCount})`
+            : mode === "primary"
+              ? `Shared 1:${live.sharedCount} optimizer · combined total (${live.sharedCount} panels)`
+              : `Shared 1:${live.sharedCount} optimizer · raw device reading`
+        }</div>`
+      : "";
 
     tip.innerHTML = `
       <div class="tip-head">
@@ -938,13 +1058,14 @@ class AndSolarPlantCard extends HTMLElement {
       </div>
       <div class="tip-grid">
         <span>Status</span><span class="tip-val">${esc(stMeta.label)}</span>
-        <span>Power</span><span class="tip-val">${formatNumber(v.power, 0)} W${esc(ratedTxt)}</span>
-        <span>Today</span><span class="tip-val">${formatNumber(v.daily_energy, 2)} kWh</span>
+        <span>Power</span><span class="tip-val">${fmtAdditive("power", "W", 0)}${mode === "average" ? esc(ratedTxt) : ""}</span>
+        <span>Today</span><span class="tip-val">${fmtAdditive("daily_energy", "kWh", 2)}</span>
         <span>Voltage</span><span class="tip-val">${formatNumber(v.voltage, 1)} V</span>
         <span>Current</span><span class="tip-val">${formatNumber(v.current, 2)} A</span>
         <span>Temp</span><span class="tip-val">${formatNumber(v.temperature, 1)} °C</span>
-        <span>Total</span><span class="tip-val">${formatNumber(v.total_energy, 1)} kWh</span>
+        <span>Total</span><span class="tip-val">${fmtAdditive("total_energy", "kWh", 1)}</span>
       </div>
+      ${sharedNote}
     `;
     tip.classList.remove("hidden");
     this._moveTooltip(event);
@@ -997,8 +1118,15 @@ class AndSolarPlantCard extends HTMLElement {
     const live = this._resolvePanelLive(p);
     const stMeta = STATUS_META[live.status] || STATUS_META.unknown;
     const v = live.values;
+    const isShared = live.sharedCount > 1;
+    const mode = this._config.shared_device_mode || "average";
     const branchLabel =
       p.device_type === "rapidShutdown" ? ` · Branch ${p.branch}` : "";
+    const sharedPill = isShared
+      ? `<span class="detail-pill">1:${live.sharedCount}${
+          mode === "average" ? ` (÷${live.sharedCount})` : " combined"
+        }</span>`
+      : "";
     const stringLabel =
       p.inverter || p.string ? ` · Inv ${p.inverter ?? "?"}/Str ${p.string ?? "?"}` : "";
 
@@ -1023,6 +1151,7 @@ class AndSolarPlantCard extends HTMLElement {
           <span class="status-dot-inline" style="background:${stMeta.dot}"></span>
           ${esc(stMeta.label)}
         </span>
+        ${sharedPill}
         <span class="detail-metrics">
           ${formatNumber(v.power, 0)} W · ${formatNumber(v.daily_energy, 2)} kWh · ${formatNumber(v.voltage, 1)} V · ${formatNumber(v.temperature, 1)} °C${esc(stringLabel)}
         </span>
@@ -1067,19 +1196,32 @@ class AndSolarPlantCard extends HTMLElement {
       live: this._resolvePanelLive(shape.panel),
     }));
 
-    const numericValues = resolved
+    const displayNumeric = resolved
       .map(({ live }) => live.values[metric.key])
       .filter((v) => v !== null && v !== undefined && Number.isFinite(v));
 
-    const minVal = numericValues.length ? Math.min(...numericValues) : 0;
-    const maxVal = numericValues.length ? Math.max(...numericValues) : 0;
+    const minVal = displayNumeric.length ? Math.min(...displayNumeric) : 0;
+    const maxVal = displayNumeric.length ? Math.max(...displayNumeric) : 0;
+
+    // Deduplicate by measurement source so 1:2 / 1:N optimizers are never double-counted
+    const uniqueSourceValues = [];
+    const seenSources = new Set();
+    for (const { shape, live } of resolved) {
+      if (seenSources.has(shape.sourceKey)) continue;
+      const rawVal = live.rawValues[metric.key];
+      if (rawVal !== null && rawVal !== undefined && Number.isFinite(rawVal)) {
+        seenSources.add(shape.sourceKey);
+        uniqueSourceValues.push(rawVal);
+      }
+    }
 
     // Update summary badge
     const summaryBadge = root.getElementById("summaryBadge");
     if (summaryBadge) {
-      if (numericValues.length) {
-        const sum = numericValues.reduce((a, b) => a + b, 0);
-        const aggVal = metric.agg === "sum" ? sum : sum / numericValues.length;
+      if (uniqueSourceValues.length) {
+        const sum = uniqueSourceValues.reduce((a, b) => a + b, 0);
+        const aggVal =
+          metric.agg === "sum" ? sum : sum / uniqueSourceValues.length;
         const aggPrefix = metric.agg === "sum" ? "Total" : "Avg";
         summaryBadge.textContent = `${aggPrefix}: ${formatNumber(aggVal, metric.decimals)} ${metric.unit}`;
       } else {
@@ -1096,6 +1238,15 @@ class AndSolarPlantCard extends HTMLElement {
     if (scaleGrad) {
       scaleGrad.style.background = `linear-gradient(90deg, ${metric.palette[0]}, ${metric.palette[1]})`;
     }
+
+    // Determine selected sourceKey for highlighting linked 1:2 partner panel
+    const selectedShape = this._selectedPanelKey
+      ? shapes.find((s) => s.key === this._selectedPanelKey)
+      : null;
+    const selectedSourceKey =
+      selectedShape && selectedShape.sharedCount > 1
+        ? selectedShape.sourceKey
+        : null;
 
     // Render SVG polygons
     const layer = root.getElementById("panelsLayer");
@@ -1126,9 +1277,21 @@ class AndSolarPlantCard extends HTMLElement {
 
       const stMeta = STATUS_META[live.status] || STATUS_META.unknown;
       const isSelected = this._selectedPanelKey === shape.key;
+      const isPartnerSelected =
+        !isSelected &&
+        selectedSourceKey !== null &&
+        shape.sourceKey === selectedSourceKey;
 
       const g = document.createElementNS(ns, "g");
-      g.setAttribute("class", `panel-group${isSelected ? " selected" : ""}`);
+      const cls = [
+        "panel-group",
+        isSelected ? "selected" : "",
+        isPartnerSelected ? "partner-selected" : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      g.setAttribute("class", cls);
+      g.dataset.sourceKey = shape.sourceKey;
 
       const poly = document.createElementNS(ns, "polygon");
       poly.setAttribute("points", shape.pointsAttr);
@@ -1148,14 +1311,25 @@ class AndSolarPlantCard extends HTMLElement {
       const outline = document.createElementNS(ns, "polygon");
       outline.setAttribute("points", shape.pointsAttr);
       outline.setAttribute("fill", "none");
-      outline.setAttribute("stroke", isSelected ? "#38bdf8" : "rgba(255,255,255,0.88)");
-      outline.setAttribute("stroke-width", isSelected ? "3" : "1.5");
+      outline.setAttribute(
+        "stroke",
+        isSelected
+          ? "#38bdf8"
+          : isPartnerSelected
+            ? "rgba(56, 189, 248, 0.8)"
+            : "rgba(255,255,255,0.88)"
+      );
+      outline.setAttribute("stroke-width", isSelected ? "3" : isPartnerSelected ? "2.2" : "1.5");
+      if (isPartnerSelected) {
+        outline.setAttribute("stroke-dasharray", "5 3");
+      }
       outline.setAttribute("stroke-linejoin", "round");
       outline.setAttribute("class", "panel-outline");
       outline.setAttribute("pointer-events", "none");
       g.appendChild(outline);
 
-      if (cfg.show_values) {
+      const showValueOnThisPanel = cfg.show_values && !live.hidePanelValue;
+      if (showValueOnThisPanel) {
         const text = document.createElementNS(ns, "text");
         text.setAttribute("x", shape.cx.toFixed(1));
         text.setAttribute(
@@ -1186,7 +1360,7 @@ class AndSolarPlantCard extends HTMLElement {
         snText.setAttribute("x", shape.cx.toFixed(1));
         snText.setAttribute(
           "y",
-          (cfg.show_values ? shape.cy + shape.fontSize * 0.85 : shape.cy + shape.snFontSize * 0.35).toFixed(1)
+          (showValueOnThisPanel ? shape.cy + shape.fontSize * 0.85 : shape.cy + shape.snFontSize * 0.35).toFixed(1)
         );
         snText.setAttribute("text-anchor", "middle");
         snText.setAttribute("fill", "rgba(255,255,255,0.82)");
@@ -1211,9 +1385,15 @@ class AndSolarPlantCard extends HTMLElement {
         g.appendChild(dot);
       }
 
-      g.addEventListener("mouseenter", (e) => this._showTooltip(shape, live, e));
+      g.addEventListener("mouseenter", (e) => {
+        if (shape.sharedCount > 1) this._setPartnerHover(shape.sourceKey, true);
+        this._showTooltip(shape, live, e);
+      });
       g.addEventListener("mousemove", (e) => this._moveTooltip(e));
-      g.addEventListener("mouseleave", () => this._hideTooltip());
+      g.addEventListener("mouseleave", () => {
+        if (shape.sharedCount > 1) this._setPartnerHover(shape.sourceKey, false);
+        this._hideTooltip();
+      });
       g.addEventListener("click", (e) => {
         e.stopPropagation();
         this._handlePanelTap(shape);
@@ -1482,8 +1662,13 @@ class AndSolarPlantCard extends HTMLElement {
           cursor: pointer;
           transition: filter 0.14s ease, fill 0.22s ease;
         }
-        .panel-group:hover .panel-poly {
+        .panel-group:hover .panel-poly,
+        .panel-group.partner-hover .panel-poly {
           filter: brightness(1.14) url(#panelShadow);
+        }
+        .panel-group.partner-hover .panel-outline {
+          stroke: rgba(56, 189, 248, 0.9);
+          stroke-width: 2.2;
         }
         .panel-value {
           font-variant-numeric: tabular-nums;
@@ -1607,6 +1792,13 @@ class AndSolarPlantCard extends HTMLElement {
           font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
           font-variant-numeric: tabular-nums;
           color: var(--primary-text-color);
+        }
+        .tip-note {
+          margin-top: 6px;
+          padding-top: 5px;
+          border-top: 1px solid var(--divider-color, rgba(127,127,127,0.2));
+          font-size: 11px;
+          color: var(--secondary-text-color);
         }
         .detail-bar {
           display: flex;

@@ -12,7 +12,14 @@ from homeassistant.helpers import entity_registry as er
 
 from .const import DOMAIN
 from .coordinator import AndSolarCoordinator
-from .parsing import layout_bounds, panel_entity_unique_ids, panel_metrics, to_float
+from .parsing import (
+    annotate_shared_panels,
+    effective_branch_key,
+    layout_bounds,
+    panel_entity_unique_ids,
+    panel_metrics,
+    to_float,
+)
 
 
 @callback
@@ -103,9 +110,12 @@ def ws_get_plant_layout(
     panels: list[dict[str, Any]] = []
     for panel in raw_panels:
         sn = panel["sn"]
-        branch_key = panel["branch_key"]
         device = data.devices.get(sn)
         device_type = (device.get("type") if device else None) or panel.get("device_type")
+        device_branch_num = device.get("branch_num") if device else None
+        branch_index, branch_key = effective_branch_key(
+            device_type, panel.get("branch"), device_branch_num
+        )
         latest = device.get("latest") if device else None
 
         metrics = panel_metrics(latest, device_type, branch_key)
@@ -119,7 +129,7 @@ def ws_get_plant_layout(
             {
                 "id": panel.get("id"),
                 "sn": sn,
-                "branch": panel["branch"],
+                "branch": branch_index,
                 "branch_key": branch_key,
                 "device_type": device_type,
                 "model": device.get("model") if device else None,
@@ -134,6 +144,8 @@ def ws_get_plant_layout(
                 "entities": entities,
             }
         )
+
+    annotate_shared_panels(panels)
 
     connection.send_result(
         msg["id"],
