@@ -80,19 +80,43 @@ The card is registered automatically when the integration loads — **no separat
 frontend download or manual Lovelace resource is required**. After updating, restart Home
 Assistant and refresh your browser.
 
+<table>
+  <tr>
+    <td align="center" valign="top" width="42%">
+      <img src="docs/images/plant-layout-card.png" alt="AndSolar Plant Layout Card showing Today Yield and panel detail bar" />
+      <br /><sub>Panel layout, live values, zoom controls &amp; detail bar</sub>
+    </td>
+    <td align="center" valign="top" width="42%">
+      <img src="docs/images/plant-layout-tooltip.png" alt="Hover tooltip showing per-panel and total metrics for a 1:2 optimizer" />
+      <br /><sub>Hover tooltip with 1:2 per-panel &amp; combined values</sub>
+    </td>
+    <td align="center" valign="top" width="16%">
+      <img src="docs/images/plant-layout-metrics.png" alt="Metric selector dropdown" />
+      <br /><sub>Live metric selector</sub>
+    </td>
+  </tr>
+</table>
+
 ### Features
 
 - **Real panel geometry** from AndCloud (`getViewListNoData`), with optional layout rotation
   and custom roof background image.
 - **Live metric switching** directly on the card: Today Yield (kWh), Power (W), Current (A),
   Voltage (V), Temperature (°C), and Cumulative Yield (kWh).
+- **1:2 / shared optimizer support**: automatically detects panels sharing a single optimizer
+  (`shared_device_mode`: `average` per-panel split, `primary` first-panel-only, or `raw`),
+  highlights linked partner panels on hover/selection, and prevents double-counting in totals.
+- **Fixed thermal temperature scale**: uses a physical color gradient (`temp_min: 20` to
+  `temp_max: 85` °C by default) so normal operating temperatures stay calm and only genuinely
+  hot panels turn amber/orange/red.
 - **Status indicators** on every panel: On (green), Off (red), Warning (amber), Offline (gray).
 - **Interactive inspection**: hover tooltip with all metrics, click a panel for the detail
   bar with one-click Home Assistant **History** (More Info) and optional **Turn On / Turn Off**
   output switch control.
 - **Zoom & pan**: mouse wheel zoom, drag to pan, touch pinch-to-zoom, double-click to reset,
   and optional `+` / `−` / reset zoom buttons.
-- **Visual editor & YAML**: configure via the Home Assistant Dashboard UI or YAML.
+- **Visual editor & YAML**: every option is configurable via the Home Assistant Dashboard UI
+  or YAML.
 
 ### Quick start
 
@@ -108,45 +132,60 @@ If you only have one plant, `plant_id` is detected automatically.
 
 ```yaml
 type: custom:andsolar-plant-card
-plant_id: 10494
-title: Roof Solar Layout
-show_title: true
-default_metric: power
-shared_device_mode: average   # average (÷2 for 1:2) | primary (first panel only) | raw
-temp_min: 20                  # Cool end of temperature color scale (°C)
-temp_max: 85                  # Hot end of temperature color scale (°C)
-metrics:
+
+# Plant & card header
+plant_id: 10494                 # Optional when you have a single plant
+title: Roof Solar Layout        # Defaults to the plant name from AndCloud
+show_title: false               # Show card title header above the toolbar
+
+# Metrics, 1:2 optimizer display & temperature scale
+default_metric: daily_energy    # daily_energy | power | current | voltage | temperature | total_energy
+shared_device_mode: average     # average (÷2 for 1:2) | primary (first panel only) | raw
+temp_min: 20                    # Cool end of temperature color scale (°C)
+temp_max: 85                    # Hot end of temperature color scale (°C)
+metrics:                        # Optional subset of metrics shown in the dropdown
   - daily_energy
   - power
-  - voltage
   - current
+  - voltage
   - temperature
   - total_energy
-height: 360
-rotation: 0
-show_header: true
-show_metric_selector: true
-show_summary: true
-show_legend: true
-show_scale: true
-show_compass: true
-show_grid: true
-show_cell_pattern: true
-show_values: true
-show_unit_on_panel: false
-show_sn: false
-show_status_dot: true
-show_tooltip: true
-show_detail_bar: true
-show_switch_control: true
-enable_zoom_pan: true
-show_zoom_controls: true
-min_zoom: 0.5
-max_zoom: 6
-tap_action: select
+
+# Canvas layout
+height: 320                     # Canvas height in pixels (140 - 1400)
+rotation: 0                     # Clockwise rotation in degrees (-180 to 180)
+
+# Toolbar & canvas display toggles
+show_header: true               # Top toolbar (metric selector, summary badge, legend)
+show_metric_selector: true      # Metric dropdown
+show_summary: true              # Total / Avg badge
+show_legend: true               # On / Off / Warning / Offline legend
+show_scale: true                # Color gradient scale bar
+show_compass: true              # North compass indicator
+show_grid: true                 # Background dot grid
+show_cell_pattern: true         # Solar cell grid texture on panels
+
+# Per-panel display toggles
+show_values: true               # Numeric values centered on each panel
+show_unit_on_panel: false       # Append unit after each panel value
+show_sn: false                  # Short device SN (+ branch) on each panel
+show_status_dot: true           # Status indicator dot in each panel corner
+
+# Interaction & control
+show_tooltip: true              # Hover tooltip with all metrics
+show_detail_bar: true           # Bottom detail bar when a panel is clicked
+show_switch_control: true       # Turn On / Turn Off button in detail bar (false = read-only)
+tap_action: select              # select | more-info | none
+
+# Zoom & pan
+enable_zoom_pan: true           # Mouse wheel zoom, drag pan, touch pinch-to-zoom
+show_zoom_controls: true        # +, −, and 100% reset buttons
+min_zoom: 0.5                   # Minimum zoom factor (0.2 - 1)
+max_zoom: 6                     # Maximum zoom factor (1 - 20)
+
 # Optional roof background image (place file in config/www/)
-# background_image: /local/roof.jpg
-# background_opacity: 0.35
+background_image: ""            # e.g. /local/roof.jpg
+background_opacity: 0.35        # 0 to 1
 ```
 
 ### Card configuration options
