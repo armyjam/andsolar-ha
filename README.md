@@ -83,25 +83,24 @@ Assistant and refresh your browser.
 
 <table>
   <tr>
-    <td align="center" valign="top" width="42%">
-      <img src="docs/images/plant-layout-card.png" alt="AndSolar Plant Layout Card showing Today Yield and panel detail bar" />
-      <br /><sub>Panel layout, live values, zoom controls &amp; detail bar</sub>
+    <td align="center" valign="top" width="50%">
+      <img src="docs/images/plant-layout-power.png" alt="AndSolar Plant Layout Card showing live Power (W) overlaid on an aligned full-roof plan with 1:2 partner highlight and detail bar" />
+      <br /><sub>Live Power (W) aligned over a full-roof image, 1:2 highlight &amp; detail bar</sub>
     </td>
-    <td align="center" valign="top" width="42%">
-      <img src="docs/images/plant-layout-tooltip.png" alt="Hover tooltip showing per-panel and total metrics for a 1:2 optimizer" />
-      <br /><sub>Hover tooltip with 1:2 per-panel &amp; combined values</sub>
-    </td>
-    <td align="center" valign="top" width="16%">
-      <img src="docs/images/plant-layout-metrics.png" alt="Metric selector dropdown" />
-      <br /><sub>Live metric selector</sub>
+    <td align="center" valign="top" width="50%">
+      <img src="docs/images/plant-layout-temperature.png" alt="AndSolar Plant Layout Card showing Temperature (°C) thermal scale and hover tooltip with per-panel and total 1:2 optimizer metrics" />
+      <br /><sub>Temperature (°C) thermal scale &amp; hover tooltip with 1:2 per-panel / combined values</sub>
     </td>
   </tr>
 </table>
 
 ### Features
 
-- **Real panel geometry** from AndCloud (`getViewListNoData`), with optional layout rotation
-  and custom roof background image.
+- **Real panel geometry** from AndCloud (`getViewListNoData`), with optional layout rotation.
+- **Full-roof background image alignment**: overlay a top-down roof plan or drone photo
+  underneath the live panel polygons with interactive scale, X/Y offset, rotation, aspect-ratio
+  fit (`meet` / `slice`), and automatic `viewBox` expansion (`background_fit_viewbox`) so empty
+  roof slopes and eaves are never clipped.
 - **Live metric switching** directly on the card: Today Yield (kWh), Power (W), Current (A),
   Voltage (V), Temperature (°C), and Cumulative Yield (kWh).
 - **1:2 / shared optimizer support**: automatically detects panels sharing a single optimizer
@@ -116,6 +115,8 @@ Assistant and refresh your browser.
   output switch control.
 - **Zoom & pan**: mouse wheel zoom, drag to pan, touch pinch-to-zoom, double-click to reset,
   and optional `+` / `−` / reset zoom buttons.
+- **Dashboard & theme friendly**: optional `fill_height` flex mode for fixed-height grid
+  dashboards and CSS custom property hooks (`--andsolar-card-*`, `--andsolar-stage-*`).
 - **Visual editor & YAML**: every option is configurable via the Home Assistant Dashboard UI
   or YAML.
 
@@ -154,6 +155,7 @@ metrics:                        # Optional subset of metrics shown in the dropdo
 
 # Canvas layout
 height: 320                     # Canvas height in pixels (140 - 1400)
+fill_height: false              # Fill parent container height instead of fixed px height
 rotation: 0                     # Clockwise rotation in degrees (-180 to 180)
 
 # Toolbar & canvas display toggles
@@ -187,7 +189,45 @@ max_zoom: 6                     # Maximum zoom factor (1 - 20)
 # Optional roof background image (place file in config/www/)
 background_image: ""            # e.g. /local/roof.jpg
 background_opacity: 0.35        # 0 to 1
+background_fit: slice           # slice (cover panel bounds) | meet (preserve aspect ratio)
+background_scale: 1.0           # Scale multiplier (0.2 - 5.0)
+background_offset_x: 0          # Horizontal offset in % of panel bounds (-200 to 200)
+background_offset_y: 0          # Vertical offset in % of panel bounds (-200 to 200)
+background_rotation: 0          # Rotation in degrees around image center (-180 to 180)
+background_fit_viewbox: false   # Expand default viewBox to fit the full background image
 ```
+
+### Aligning a full-roof background image
+
+When your roof plan or drone photo includes roof slopes without panels (such as an empty north
+slope or eaves overhang), use `background_fit: meet` with `background_fit_viewbox: true` and
+fine-tune `background_scale`, `background_offset_x`, `background_offset_y`, and
+`background_rotation` live in the visual editor:
+
+```yaml
+type: custom:andsolar-plant-card
+show_grid: false
+fill_height: true
+background_image: /local/roof-plan.png
+background_opacity: 0.55
+background_fit: meet
+background_scale: 1.45
+background_offset_x: 0
+background_offset_y: -18
+background_rotation: 1.5
+background_fit_viewbox: true
+```
+
+### Customizing card & canvas styles
+
+Optional CSS custom properties can be set in your Home Assistant theme (or via `card_mod`) to
+blend the card into custom dashboards without changing default HA styling:
+
+- `--andsolar-card-bg` (default: `var(--ha-card-background, var(--card-background-color, #fff))`)
+- `--andsolar-card-border` (default: HA card border variables)
+- `--andsolar-card-radius` (default: `var(--ha-card-border-radius, 12px)`)
+- `--andsolar-stage-bg` (default: `var(--secondary-background-color, rgba(127,127,127,0.06))`)
+- `--andsolar-stage-border` (default: `1px solid var(--divider-color, rgba(127,127,127,0.2))`)
 
 ### Card configuration options
 
@@ -201,7 +241,8 @@ background_opacity: 0.35        # 0 to 1
 | `temp_min` | number | `20` | Cool end (°C) of the fixed thermal color scale for the Temperature view. |
 | `temp_max` | number | `85` | Hot end (°C) of the fixed thermal color scale for the Temperature view. |
 | `metrics` | list | all 6 metrics | Limit which metrics appear in the dropdown selector. |
-| `height` | integer | `320` | Canvas height in pixels (`140`–`1400`). |
+| `height` | integer | `320` | Canvas height in pixels (`140`–`1400`). Ignored when `fill_height: true`. |
+| `fill_height` | boolean | `false` | Fill the parent container's height with a flex layout instead of using a fixed pixel `height`. |
 | `rotation` | number | `0` | Rotate the entire layout clockwise in degrees (`-180` to `180`). The North compass rotates with it. |
 | `show_header` | boolean | `true` | Show the top toolbar (metric dropdown, summary badge, legend). |
 | `show_metric_selector` | boolean | `true` | Show the metric dropdown in the toolbar. |
@@ -225,6 +266,12 @@ background_opacity: 0.35        # 0 to 1
 | `tap_action` | string | `select` | What happens when tapping a panel: `select` (show detail bar), `more-info` (open HA entity history dialog), or `none`. |
 | `background_image` | string | `""` | Optional image URL (e.g. `/local/roof.jpg`) rendered behind panels. |
 | `background_opacity` | number | `0.35` | Opacity of `background_image` (`0`–`1`). |
+| `background_fit` | string | `slice` | SVG aspect-ratio fit mode: `slice` (cover panel bounds) or `meet` (preserve natural aspect ratio inside a square scaled to `max(width, height)`). |
+| `background_scale` | number | `1.0` | Scale multiplier for `background_image` (`0.2`–`5.0`), centered on panel bounds. |
+| `background_offset_x` | number | `0` | Horizontal shift as a percentage of panel bounds width (`-200` to `200`, positive = right). |
+| `background_offset_y` | number | `0` | Vertical shift as a percentage of panel bounds height (`-200` to `200`, positive = down). |
+| `background_rotation` | number | `0` | Rotation in degrees (`-180` to `180`) around the background image's center. |
+| `background_fit_viewbox` | boolean | `false` | Expand the SVG `viewBox` to the union of panels and the transformed background image so overhang/empty roof slopes are not clipped at 100% zoom. |
 
 ## Safety
 
