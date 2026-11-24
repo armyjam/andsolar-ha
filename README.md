@@ -83,25 +83,24 @@ Assistant and refresh your browser.
 
 <table>
   <tr>
-    <td align="center" valign="top" width="42%">
-      <img src="docs/images/plant-layout-card.png" alt="AndSolar Plant Layout Card showing Today Yield and panel detail bar" />
-      <br /><sub>Panel layout, live values, zoom controls &amp; detail bar</sub>
+    <td align="center" valign="top" width="50%">
+      <img src="docs/images/plant-layout-power.png" alt="AndSolar Plant Layout Card showing live Power (W) overlaid on an aligned full-roof plan with 1:2 partner highlight and detail bar" />
+      <br /><sub>Live Power (W) aligned over a full-roof image, 1:2 highlight &amp; detail bar</sub>
     </td>
-    <td align="center" valign="top" width="42%">
-      <img src="docs/images/plant-layout-tooltip.png" alt="Hover tooltip showing per-panel and total metrics for a 1:2 optimizer" />
-      <br /><sub>Hover tooltip with 1:2 per-panel &amp; combined values</sub>
-    </td>
-    <td align="center" valign="top" width="16%">
-      <img src="docs/images/plant-layout-metrics.png" alt="Metric selector dropdown" />
-      <br /><sub>Live metric selector</sub>
+    <td align="center" valign="top" width="50%">
+      <img src="docs/images/plant-layout-temperature.png" alt="AndSolar Plant Layout Card showing Temperature (°C) thermal scale and hover tooltip with per-panel and total 1:2 optimizer metrics" />
+      <br /><sub>Temperature (°C) thermal scale &amp; hover tooltip with 1:2 per-panel / combined values</sub>
     </td>
   </tr>
 </table>
 
 ### Features
 
-- **Real panel geometry** from AndCloud (`getViewListNoData`), with optional layout rotation
-  and custom roof background image.
+- **Real panel geometry** from AndCloud (`getViewListNoData`), with optional layout rotation.
+- **Full-roof background image alignment**: overlay a top-down roof plan or drone photo
+  underneath the live panel polygons with interactive scale, X/Y offset, rotation, aspect-ratio
+  fit (`meet` / `slice`), and automatic `viewBox` expansion (`background_fit_viewbox`) so empty
+  roof slopes and eaves are never clipped.
 - **Live metric switching** directly on the card: Today Yield (kWh), Power (W), Current (A),
   Voltage (V), Temperature (°C), and Cumulative Yield (kWh).
 - **1:2 / shared optimizer support**: automatically detects panels sharing a single optimizer
@@ -116,6 +115,8 @@ Assistant and refresh your browser.
   output switch control.
 - **Zoom & pan**: mouse wheel zoom, drag to pan, touch pinch-to-zoom, double-click to reset,
   and optional `+` / `−` / reset zoom buttons.
+- **Dashboard & theme friendly**: optional `fill_height` flex mode for fixed-height grid
+  dashboards and CSS custom property hooks (`--andsolar-card-*`, `--andsolar-stage-*`).
 - **Visual editor & YAML**: every option is configurable via the Home Assistant Dashboard UI
   or YAML.
 

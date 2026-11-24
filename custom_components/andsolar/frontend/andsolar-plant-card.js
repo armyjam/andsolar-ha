@@ -6,7 +6,7 @@
  * and configurable YAML / visual editor options.
  */
 
-const CARD_VERSION = "1.2.0-beta.1";
+const CARD_VERSION = "1.2.0";
 
 const SPLIT_METRICS = new Set(["daily_energy", "total_energy", "power", "voltage"]);
 const SHARED_DEVICE_MODES = new Set(["average", "primary", "raw"]);
