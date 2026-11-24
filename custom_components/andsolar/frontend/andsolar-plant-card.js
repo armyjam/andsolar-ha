@@ -6,10 +6,11 @@
  * and configurable YAML / visual editor options.
  */
 
-const CARD_VERSION = "1.1.0";
+const CARD_VERSION = "1.2.0-beta.1";
 
 const SPLIT_METRICS = new Set(["daily_energy", "total_energy", "power", "voltage"]);
 const SHARED_DEVICE_MODES = new Set(["average", "primary", "raw"]);
+const BACKGROUND_FITS = new Set(["slice", "meet"]);
 
 const METRIC_DEFS = {
   daily_energy: {
@@ -117,9 +118,16 @@ const DEFAULT_CONFIG = {
   max_zoom: 6,
   rotation: 0,
   height: 320,
+  fill_height: false,
   tap_action: "select",
   background_image: "",
   background_opacity: 0.35,
+  background_scale: 1.0,
+  background_offset_x: 0,
+  background_offset_y: 0,
+  background_rotation: 0,
+  background_fit: "slice",
+  background_fit_viewbox: false,
 };
 
 function esc(value) {
@@ -188,6 +196,47 @@ function median(values) {
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+function computeBackgroundRect(cb, cfg) {
+  const fit = cfg.background_fit === "meet" ? "meet" : "slice";
+  const scale = clamp(Number(cfg.background_scale) || 1.0, 0.2, 5.0);
+  const offsetX = clamp(Number(cfg.background_offset_x) || 0, -200, 200);
+  const offsetY = clamp(Number(cfg.background_offset_y) || 0, -200, 200);
+  const rotation = clamp(Number(cfg.background_rotation) || 0, -180, 180);
+
+  const baseW = fit === "meet" ? Math.max(cb.w, cb.h) : cb.w;
+  const baseH = fit === "meet" ? Math.max(cb.w, cb.h) : cb.h;
+  const w = baseW * scale;
+  const h = baseH * scale;
+
+  const cx = cb.x + cb.w / 2 + (offsetX / 100) * cb.w;
+  const cy = cb.y + cb.h / 2 + (offsetY / 100) * cb.h;
+  const x = cx - w / 2;
+  const y = cy - h / 2;
+
+  const rad = (rotation * Math.PI) / 180;
+  const absCos = Math.abs(Math.cos(rad));
+  const absSin = Math.abs(Math.sin(rad));
+  const halfAabbW = (w * absCos + h * absSin) / 2;
+  const halfAabbH = (w * absSin + h * absCos) / 2;
+
+  return {
+    x,
+    y,
+    w,
+    h,
+    cx,
+    cy,
+    fit,
+    rotation,
+    aabb: {
+      minX: cx - halfAabbW,
+      minY: cy - halfAabbH,
+      maxX: cx + halfAabbW,
+      maxY: cy + halfAabbH,
+    },
+  };
 }
 
 class AndSolarPlantCard extends HTMLElement {
@@ -293,6 +342,7 @@ class AndSolarPlantCard extends HTMLElement {
             },
           ],
         },
+        { name: "fill_height", selector: { boolean: {} } },
         {
           type: "expandable",
           title: "Display options",
@@ -363,6 +413,65 @@ class AndSolarPlantCard extends HTMLElement {
               name: "background_opacity",
               selector: { number: { min: 0, max: 1, step: 0.05, mode: "slider" } },
             },
+            {
+              name: "background_fit",
+              selector: {
+                select: {
+                  mode: "dropdown",
+                  options: [
+                    { value: "slice", label: "Cover panel bounds (slice)" },
+                    { value: "meet", label: "Contain aspect ratio (meet)" },
+                  ],
+                },
+              },
+            },
+            {
+              name: "background_scale",
+              selector: { number: { min: 0.2, max: 5, step: 0.01, mode: "box" } },
+            },
+            {
+              type: "grid",
+              name: "",
+              schema: [
+                {
+                  name: "background_offset_x",
+                  selector: {
+                    number: {
+                      min: -200,
+                      max: 200,
+                      step: 0.5,
+                      unit_of_measurement: "%",
+                      mode: "box",
+                    },
+                  },
+                },
+                {
+                  name: "background_offset_y",
+                  selector: {
+                    number: {
+                      min: -200,
+                      max: 200,
+                      step: 0.5,
+                      unit_of_measurement: "%",
+                      mode: "box",
+                    },
+                  },
+                },
+              ],
+            },
+            {
+              name: "background_rotation",
+              selector: {
+                number: {
+                  min: -180,
+                  max: 180,
+                  step: 0.5,
+                  unit_of_measurement: "°",
+                  mode: "box",
+                },
+              },
+            },
+            { name: "background_fit_viewbox", selector: { boolean: {} } },
           ],
         },
       ],
@@ -377,6 +486,7 @@ class AndSolarPlantCard extends HTMLElement {
           temp_max: "Hot temperature (scale max)",
           tap_action: "Panel tap action",
           height: "Canvas height",
+          fill_height: "Fill container height (ignore fixed px height)",
           rotation: "Layout rotation",
           show_header: "Show top toolbar",
           show_metric_selector: "Show metric dropdown",
@@ -399,6 +509,12 @@ class AndSolarPlantCard extends HTMLElement {
           max_zoom: "Maximum zoom",
           background_image: "Background image URL (e.g. /local/roof.jpg)",
           background_opacity: "Background image opacity",
+          background_fit: "Background fit mode",
+          background_scale: "Background scale",
+          background_offset_x: "Background X offset",
+          background_offset_y: "Background Y offset",
+          background_rotation: "Background rotation",
+          background_fit_viewbox: "Expand viewBox to fit background image",
         };
         return labels[schema.name] || schema.name;
       },
@@ -410,8 +526,16 @@ class AndSolarPlantCard extends HTMLElement {
       throw new Error("Invalid configuration");
     }
 
-    const prevPlantId = this._config?.plant_id;
-    const prevRotation = this._config?.rotation;
+    const prevConfig = this._config;
+    const prevPlantId = prevConfig?.plant_id;
+    const prevRotation = prevConfig?.rotation;
+    const prevBgImage = prevConfig?.background_image;
+    const prevBgScale = prevConfig?.background_scale;
+    const prevBgOffsetX = prevConfig?.background_offset_x;
+    const prevBgOffsetY = prevConfig?.background_offset_y;
+    const prevBgRotation = prevConfig?.background_rotation;
+    const prevBgFit = prevConfig?.background_fit;
+    const prevBgFitViewbox = prevConfig?.background_fit_viewbox;
 
     const merged = { ...DEFAULT_CONFIG, ...config };
     const allowedMetrics = Array.isArray(merged.metrics)
@@ -425,6 +549,9 @@ class AndSolarPlantCard extends HTMLElement {
     if (!SHARED_DEVICE_MODES.has(merged.shared_device_mode)) {
       merged.shared_device_mode = DEFAULT_CONFIG.shared_device_mode;
     }
+    if (!BACKGROUND_FITS.has(merged.background_fit)) {
+      merged.background_fit = DEFAULT_CONFIG.background_fit;
+    }
 
     const tempMin = Number(merged.temp_min);
     const tempMax = Number(merged.temp_max);
@@ -435,16 +562,48 @@ class AndSolarPlantCard extends HTMLElement {
         : Math.max(merged.temp_min + 10, DEFAULT_CONFIG.temp_max);
 
     merged.height = clamp(Number(merged.height) || DEFAULT_CONFIG.height, 140, 1400);
+    merged.fill_height = Boolean(merged.fill_height);
     merged.min_zoom = clamp(Number(merged.min_zoom) || DEFAULT_CONFIG.min_zoom, 0.2, 1);
     merged.max_zoom = clamp(Number(merged.max_zoom) || DEFAULT_CONFIG.max_zoom, 1, 20);
     merged.rotation = Number(merged.rotation) || 0;
-    merged.background_opacity = clamp(
-      merged.background_opacity !== undefined
-        ? Number(merged.background_opacity)
-        : DEFAULT_CONFIG.background_opacity,
+
+    const parseClamped = (val, fallback, min, max) => {
+      if (val === "" || val === null || val === undefined) return fallback;
+      const num = Number(val);
+      return Number.isFinite(num) ? clamp(num, min, max) : fallback;
+    };
+
+    merged.background_opacity = parseClamped(
+      merged.background_opacity,
+      DEFAULT_CONFIG.background_opacity,
       0,
       1
     );
+    merged.background_scale = parseClamped(
+      merged.background_scale,
+      DEFAULT_CONFIG.background_scale,
+      0.2,
+      5.0
+    );
+    merged.background_offset_x = parseClamped(
+      merged.background_offset_x,
+      DEFAULT_CONFIG.background_offset_x,
+      -200,
+      200
+    );
+    merged.background_offset_y = parseClamped(
+      merged.background_offset_y,
+      DEFAULT_CONFIG.background_offset_y,
+      -200,
+      200
+    );
+    merged.background_rotation = parseClamped(
+      merged.background_rotation,
+      DEFAULT_CONFIG.background_rotation,
+      -180,
+      180
+    );
+    merged.background_fit_viewbox = Boolean(merged.background_fit_viewbox);
 
     if (merged.plant_id === "" || merged.plant_id === null) {
       merged.plant_id = undefined;
@@ -454,7 +613,15 @@ class AndSolarPlantCard extends HTMLElement {
     this._currentMetric = merged.default_metric;
 
     const plantChanged = prevPlantId !== merged.plant_id;
-    const rotationChanged = prevRotation !== merged.rotation;
+    const geometryChanged =
+      prevRotation !== merged.rotation ||
+      prevBgImage !== merged.background_image ||
+      prevBgScale !== merged.background_scale ||
+      prevBgOffsetX !== merged.background_offset_x ||
+      prevBgOffsetY !== merged.background_offset_y ||
+      prevBgRotation !== merged.background_rotation ||
+      prevBgFit !== merged.background_fit ||
+      prevBgFitViewbox !== merged.background_fit_viewbox;
 
     if (plantChanged) {
       this._layout = null;
@@ -464,7 +631,7 @@ class AndSolarPlantCard extends HTMLElement {
       if (this._hass) {
         this._fetchLayout();
       }
-    } else if (rotationChanged && this._layout) {
+    } else if (geometryChanged && this._layout) {
       this._buildGeometry();
     }
 
@@ -719,7 +886,6 @@ class AndSolarPlantCard extends HTMLElement {
 
     const rawW = Math.max(maxX - minX, 64);
     const rawH = Math.max(maxY - minY, 64);
-    const pad = Math.max(28, Math.min(rawW, rawH) * 0.08);
 
     const shapes = transformed.map(({ panel, pts }) => {
       const n = pts.length || 1;
@@ -781,16 +947,35 @@ class AndSolarPlantCard extends HTMLElement {
       };
     });
 
+    const contentBounds = { x: minX, y: minY, w: rawW, h: rawH };
+    const backgroundRect = computeBackgroundRect(contentBounds, this._config);
+
+    let vbMinX = minX;
+    let vbMinY = minY;
+    let vbMaxX = maxX;
+    let vbMaxY = maxY;
+    if (this._config.background_image && this._config.background_fit_viewbox) {
+      vbMinX = Math.min(vbMinX, backgroundRect.aabb.minX);
+      vbMinY = Math.min(vbMinY, backgroundRect.aabb.minY);
+      vbMaxX = Math.max(vbMaxX, backgroundRect.aabb.maxX);
+      vbMaxY = Math.max(vbMaxY, backgroundRect.aabb.maxY);
+    }
+
+    const vbW = Math.max(vbMaxX - vbMinX, 64);
+    const vbH = Math.max(vbMaxY - vbMinY, 64);
+    const vbPad = Math.max(28, Math.min(vbW, vbH) * 0.08);
+
     this._geometry = {
       shapes,
-      contentBounds: { x: minX, y: minY, w: rawW, h: rawH },
+      contentBounds,
+      backgroundRect,
     };
 
     this._baseVb = {
-      x: minX - pad,
-      y: minY - pad,
-      w: rawW + pad * 2,
-      h: rawH + pad * 2,
+      x: vbMinX - vbPad,
+      y: vbMinY - vbPad,
+      w: vbW + vbPad * 2,
+      h: vbH + vbPad * 2,
     };
     this._vb = { ...this._baseVb };
   }
@@ -1526,10 +1711,16 @@ class AndSolarPlantCard extends HTMLElement {
         </div>
       `;
     } else {
-      const cb = this._geometry.contentBounds;
-      const bgImgHtml = cfg.background_image
-        ? `<image href="${esc(cfg.background_image)}" x="${cb.x.toFixed(1)}" y="${cb.y.toFixed(1)}" width="${cb.w.toFixed(1)}" height="${cb.h.toFixed(1)}" preserveAspectRatio="xMidYMid slice" opacity="${cfg.background_opacity}" pointer-events="none" />`
-        : "";
+      const bg = this._geometry.backgroundRect;
+      const bgTransformAttr =
+        bg && bg.rotation !== 0
+          ? ` transform="rotate(${bg.rotation} ${bg.cx.toFixed(2)} ${bg.cy.toFixed(2)})"`
+          : "";
+      const bgImgHtml =
+        cfg.background_image && bg
+          ? `<image href="${esc(cfg.background_image)}" x="${bg.x.toFixed(2)}" y="${bg.y.toFixed(2)}" width="${bg.w.toFixed(2)}" height="${bg.h.toFixed(2)}" preserveAspectRatio="xMidYMid ${bg.fit}" opacity="${cfg.background_opacity}"${bgTransformAttr} pointer-events="none" />`
+          : "";
+      const stageStyleAttr = cfg.fill_height ? "" : ` style="height:${cfg.height}px"`;
 
       bodyHtml = `
         ${
@@ -1570,7 +1761,7 @@ class AndSolarPlantCard extends HTMLElement {
             : ""
         }
 
-        <div id="stage" class="stage ${cfg.show_grid ? "with-grid" : ""}" style="height:${cfg.height}px">
+        <div id="stage" class="stage ${cfg.show_grid ? "with-grid" : ""}"${stageStyleAttr}>
           <svg
             id="roofSvg"
             class="roof-svg ${cfg.enable_zoom_pan ? "pannable" : ""}"
@@ -1638,6 +1829,33 @@ class AndSolarPlantCard extends HTMLElement {
       `;
     }
 
+    const fillHeightCss = cfg.fill_height
+      ? `
+        :host {
+          display: flex;
+          flex-direction: column;
+          height: 100%;
+        }
+        ha-card {
+          display: flex;
+          flex-direction: column;
+          height: 100%;
+          box-sizing: border-box;
+        }
+        .card-body {
+          flex: 1 1 auto;
+          min-height: 0;
+          height: 100%;
+          box-sizing: border-box;
+        }
+        .stage {
+          flex: 1 1 auto;
+          min-height: 0;
+          height: auto;
+        }
+      `
+      : "";
+
     this.shadowRoot.innerHTML = `
       <style>
         :host {
@@ -1646,7 +1864,9 @@ class AndSolarPlantCard extends HTMLElement {
         ha-card {
           overflow: hidden;
           color: var(--primary-text-color);
-          background: var(--ha-card-background, var(--card-background-color, #fff));
+          background: var(--andsolar-card-bg, var(--ha-card-background, var(--card-background-color, #fff)));
+          border: var(--andsolar-card-border, var(--ha-card-border-width, 1px) solid var(--ha-card-border-color, var(--divider-color, #e0e0e0)));
+          border-radius: var(--andsolar-card-radius, var(--ha-card-border-radius, 12px));
         }
         .card-header-title {
           padding: 14px 16px 4px 16px;
@@ -1722,13 +1942,15 @@ class AndSolarPlantCard extends HTMLElement {
         .stage {
           position: relative;
           width: 100%;
+          box-sizing: border-box;
           border-radius: 10px;
-          border: 1px solid var(--divider-color, rgba(127,127,127,0.2));
-          background-color: var(--secondary-background-color, rgba(127,127,127,0.06));
+          border: var(--andsolar-stage-border, 1px solid var(--divider-color, rgba(127,127,127,0.2)));
+          background-color: var(--andsolar-stage-bg, var(--secondary-background-color, rgba(127,127,127,0.06)));
           overflow: hidden;
           touch-action: none;
           user-select: none;
         }
+        ${fillHeightCss}
         .stage.with-grid {
           background-image: radial-gradient(
             circle,
