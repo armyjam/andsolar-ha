@@ -84,12 +84,32 @@ Assistant and refresh your browser.
 <table>
   <tr>
     <td align="center" valign="top" width="50%">
-      <img src="docs/images/plant-layout-power.png" alt="AndSolar Plant Layout Card showing live Power (W) overlaid on an aligned full-roof plan with 1:2 partner highlight and detail bar" />
-      <br /><sub>Live Power (W) aligned over a full-roof image, 1:2 highlight &amp; detail bar</sub>
+      <img src="docs/images/plant-layout-power.png" alt="AndSolar Plant Layout Card — Power (W) view aligned on a full-roof plan" />
+      <br /><sub>Power (W)</sub>
     </td>
     <td align="center" valign="top" width="50%">
-      <img src="docs/images/plant-layout-temperature.png" alt="AndSolar Plant Layout Card showing Temperature (°C) thermal scale and hover tooltip with per-panel and total 1:2 optimizer metrics" />
-      <br /><sub>Temperature (°C) thermal scale &amp; hover tooltip with 1:2 per-panel / combined values</sub>
+      <img src="docs/images/plant-layout-today-yield.png" alt="AndSolar Plant Layout Card — Today Yield (kWh) view" />
+      <br /><sub>Today Yield (kWh)</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" valign="top" width="50%">
+      <img src="docs/images/plant-layout-temperature.png" alt="AndSolar Plant Layout Card — Temperature (°C) fixed thermal scale view" />
+      <br /><sub>Temperature (°C)</sub>
+    </td>
+    <td align="center" valign="top" width="50%">
+      <img src="docs/images/plant-layout-voltage.png" alt="AndSolar Plant Layout Card — Voltage (V) view" />
+      <br /><sub>Voltage (V)</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" valign="top" width="50%">
+      <img src="docs/images/plant-layout-current.png" alt="AndSolar Plant Layout Card — Current (A) view" />
+      <br /><sub>Current (A)</sub>
+    </td>
+    <td align="center" valign="top" width="50%">
+      <img src="docs/images/plant-layout-cumulative-yield.png" alt="AndSolar Plant Layout Card — Cumulative Yield (kWh) view" />
+      <br /><sub>Cumulative Yield (kWh)</sub>
     </td>
   </tr>
 </table>
