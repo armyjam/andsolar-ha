@@ -112,6 +112,16 @@ Assistant and refresh your browser.
       <br /><sub>Cumulative Yield (kWh)</sub>
     </td>
   </tr>
+  <tr>
+    <td align="center" valign="top" width="50%">
+      <img src="docs/images/plant-layout-tooltip-zoom.png" alt="AndSolar Plant Layout Card — Zoomed view (306%) with 1:2 optimizer hover tooltip and linked partner highlight" />
+      <br /><sub>Zoom &amp; hover tooltip (1:2 per-panel &amp; total metrics)</sub>
+    </td>
+    <td align="center" valign="top" width="50%">
+      <img src="docs/images/plant-layout-editor.png" alt="AndSolar Plant Layout Card — Home Assistant card editor preview with default grid and detail bar (History & Turn Off)" />
+      <br /><sub>Card editor preview, default grid &amp; detail bar (History / Turn Off)</sub>
+    </td>
+  </tr>
 </table>
 
 ### Features
